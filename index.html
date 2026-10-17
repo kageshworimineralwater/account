@@ -105,6 +105,7 @@
     .site-footer { min-height:54px;padding:17px;text-align:center;font-size:11px;color:#6d7d90;background:#fff;border-top:1px solid var(--border); }
     .site-footer span { margin:0 8px; }.site-footer a { color:#0d62bd;text-decoration:none;font-weight:800; }
     .busy-overlay,.modal-overlay { position:fixed;inset:0;z-index:9000;background:#071b3385;display:flex;align-items:center;justify-content:center;padding:18px;backdrop-filter:blur(4px); }
+    .modal-overlay { z-index:9100; }
     .busy-card,.modal-card { width:min(100%,410px);background:#fff;border-radius:22px;padding:32px;text-align:center;box-shadow:0 30px 90px #001b3844; }
     .busy-card strong,.busy-card small { display:block;margin-top:14px; }.busy-card small { color:var(--muted);font-size:12px; }
     .spinner { width:44px;height:44px;margin:0 auto;border-radius:50%;border:4px solid #e1edfa;border-top-color:#1168d8;animation:spin .7s linear infinite; }
@@ -191,7 +192,7 @@
 
     // REQUIRED CONFIGURATION: paste your deployed Apps Script /exec URL.
     const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyrblxG9rVhhFi4DJmHjTrvNMJpG2510wGEkLcOrVcV0zT8ilM09q2WjxDtj7mpZV-d5Q/exec';
-    const SCRIPT_ORIGIN = 'https://script.google.com';
+    const SCRIPT_ORIGINS = ['https://script.google.com', 'https://script.googleusercontent.com'];
     const pages = [
       ['dashboard', '▦ Dashboard'], ['customers', '♙ Customers'],
       ['products', '◈ Products'], ['vehicles', '▣ Vehicles'],
@@ -201,7 +202,7 @@
       ['settlements', '✓ Vehicle Settlement'], ['ledger', '☷ Ledger'],
       ['records', '≡ Transaction Records'], ['userAccess', '♙ User Access']
     ];
-    const state = { token: '', role: '', permissions: [], ready: false, current: 'dashboard', masters: null, pending: new Map(), seq: 0 };
+    const state = { bridgeOrigin: '', token: '', role: '', permissions: [], ready: false, current: 'dashboard', masters: null, pending: new Map(), seq: 0 };
     const $ = id => document.getElementById(id);
     const fmt = n => Number(n || 0).toLocaleString('en-IN', {maximumFractionDigits:2});
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g,
@@ -266,7 +267,7 @@
     // The bridge is a Google-hosted Apps Script HTML page. It forwards
     // authenticated requests via google.script.run; no public JSONP endpoints.
     function request(action, data = {}) {
-      if (!state.ready) return Promise.reject(Error('Backend not connected. Check deployment URL.'));
+      if (!state.ready) return Promise.reject(Error('Accounting server is not ready. Check deployment and refresh the page.'));
       return new Promise((resolve, reject) => {
         const id = ++state.seq;
         const timeout = setTimeout(() => {
@@ -275,13 +276,14 @@
         }, 45000);
         state.pending.set(id, {resolve, reject, timeout});
         $('bridge').contentWindow.postMessage({kind:'ERP_REQUEST',id,
-          payload:{action,data,token:state.token}},SCRIPT_ORIGIN);
+          payload:{action,data,token:state.token}},state.bridgeOrigin);
       });
     }
 
     window.addEventListener('message', event => {
-      if (event.origin !== SCRIPT_ORIGIN || event.source !== $('bridge').contentWindow) return;
+      if (!SCRIPT_ORIGINS.includes(event.origin) || event.source !== $('bridge').contentWindow) return;
       if (event.data?.kind === 'ERP_READY') {
+        state.bridgeOrigin = event.origin;
         state.ready = true;
         $('connection').textContent = ''; 
       }
@@ -296,7 +298,20 @@
     });
 
     if (APPS_SCRIPT_URL.startsWith('https://script.google.com/macros/s/')) {
+      $('bridge').addEventListener('load', () => {
+        // The iframe can redirect to Google's HTML-service host.
+        // The bridge sends READY after it receives HELLO.
+        for (const origin of SCRIPT_ORIGINS) {
+          $('bridge').contentWindow.postMessage({kind:'ERP_HELLO'}, origin);
+        }
+      });
       $('bridge').src = APPS_SCRIPT_URL;
+      setTimeout(() => {
+        if (!state.ready) {
+          $('connection').textContent = 'Unable to connect to accounting server. Check Apps Script deployment.';
+          $('connection').classList.remove('hide');
+        }
+      }, 12000);
     } else {
       $('connection').textContent = 'Connection configuration required';
       $('connection').classList.remove('hide');
@@ -451,16 +466,19 @@
           <form id="createAccount">
             ${field('newUsername','New username')}
             ${field('newPassword','Password (minimum 12 characters)','password')}
+            ${field('newEmail','Recovery email','email','required')}
             <label>Account Type</label><select name="role"><option>Admin</option><option>Super Admin</option></select>
             <p><button class="btn">Create account</button></p>
           </form></section>
         <section class="panel"><h2>Existing accounts</h2>
           ${users.map(u => `<div class="panel" style="margin-bottom:12px">
             <strong>${escapeHtml(u.username)}</strong> — ${escapeHtml(u.role)}
+             <span class="hint">${escapeHtml(u.email || 'No recovery email')}</span>
             <span class="hint">(${escapeHtml(u.status)})</span>
             <div style="margin:12px 0">
               <button class="btn secondary" data-toggle="${escapeHtml(u.username)}" data-status="${u.status==='Active'?'Inactive':'Active'}">${u.status==='Active'?'Deactivate':'Activate'}</button>
               <button class="btn secondary" data-password="${escapeHtml(u.username)}">Reset password</button>
+
             </div>
             ${u.role==='Admin' ? `<div class="form-grid">${entries.map(([key,label])=>
               `<label><input type="checkbox" data-perm="${escapeHtml(u.username)}" value="${key}" ${u.permissions.includes(key)?'checked':''}> ${escapeHtml(label)}</label>`).join('')}</div>
@@ -472,7 +490,7 @@
         const form = e.currentTarget;
         try {
           await withBusy(() => request('manageUsers',{command:'create',username:form.newUsername.value.trim(),
-            password:form.newPassword.value,role:form.role.value}), 'Creating account…');
+            password:form.newPassword.value,email:form.newEmail.value.trim(),role:form.role.value}), 'Creating account…');
           notify('Account created.'); await userAccess();
         } catch(err) { notify(err.message,true); }
       });
