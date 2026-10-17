@@ -60,7 +60,7 @@
     th { color: var(--muted); background: #f8fbff; }
     .notice { padding: 13px 16px; border-radius: 10px; background: #eaf3ff; color: #174f88; margin-bottom: 18px; font-size: 13px; }
     .notice.error { background: #fff0f0; color: var(--danger); }
-    .login { max-width: 440px; margin: 11vh auto; }
+    .login { max-width: 440px; margin: 3vh auto; }
     .login .panel { padding: 32px; }
     .hide { display: none !important; }
     .status { font-size: 12px; color: var(--muted); }
@@ -116,6 +116,28 @@
     #modalInputWrap { text-align:left;margin-top:16px; }
     .status { margin-top:17px;text-align:center; }
     @media(max-width:640px){ .login { margin:4vh auto 5vh; }.login .panel { padding:26px; }.site-footer { font-size:10px;line-height:1.8; }.sidebar { width:100%; } }
+    /* V3.2 — compact premium authentication */
+    body:has(#loginScreen:not(.hide)) { background:linear-gradient(125deg,#071c35 0%,#12385b 48%,#eaf4f9 48%,#f4f8fc 100%); }
+    .login { max-width:470px; margin:clamp(12px,4vh,40px) auto 12px; }
+    .login .panel { padding:clamp(22px,3vw,34px); box-shadow:0 24px 70px #071d3540; border-radius:22px; }
+    .login-eyebrow { color:#0c7b91; font-size:10px; letter-spacing:1.8px; }
+    .login h2 { letter-spacing:-.7px; }
+    .login .hint { margin-bottom:16px; }
+    .login p { margin:12px 0; }
+    .login .brand-logo { width:58px;height:58px; }
+    .login-submit { width:100%; padding:14px; margin-top:10px; }
+    .forgot-link { display:block; border:0; background:none; color:#1163b4; font-weight:650; margin:13px auto 0; padding:6px; }
+    .forgot-link:hover { text-decoration:underline; }
+    .header-actions { display:flex;gap:8px;flex-wrap:wrap; }
+    .recovery-card { position:relative; width:min(440px,94vw); text-align:left; }
+    .recovery-card label { margin-top:14px; }
+    .recovery-card input { margin-bottom:6px; }
+    .recovery-close { position:absolute;right:18px;top:12px;border:0;background:none;font-size:26px;cursor:pointer; }
+    .recovery-card h2 { margin-right:24px; }
+    .recovery-card p { font-size:13px; }
+    .site-footer { min-height:45px; }
+    @media(min-width:700px) { body:has(#loginScreen:not(.hide)) { min-height:100vh;display:flex;flex-direction:column; } body:has(#loginScreen:not(.hide)) #loginScreen { flex:1; width:100%; } body:has(#loginScreen:not(.hide)) .site-footer { flex:none; } }
+    @media(max-width:520px) { .login { margin:12px 12px; }.login .panel { padding:22px; } }
   </style>
 </head>
 <body>
@@ -127,9 +149,10 @@
       <form id="loginForm">
         <p><label for="username">Username</label><input id="username" required autocomplete="username"></p>
         <p><label for="password">Password</label><input id="password" required type="password" autocomplete="current-password"></p>
-        <button class="btn login-submit" id="loginButton" type="submit">Secure Sign In →</button>
+        <button class="btn login-submit" id="loginButton" type="submit">Sign In</button>
+        <button class="forgot-link" type="button" id="forgotButton">Forgot password?</button>
       </form>
-      <p class="status" id="connection">Connecting to secure accounting server…</p>
+      <p class="status hide" id="connection" aria-live="polite"></p>
     </section>
   </div>
   <div id="app" class="layout hide">
@@ -138,13 +161,30 @@
       <nav id="navigation"></nav>
     </aside>
     <main class="main">
-      <header><div><h1 id="pageTitle">Dashboard</h1><small>Production · Inventory · Accounting</small></div><button class="btn secondary" id="logout">Logout</button></header>
+      <header><div><h1 id="pageTitle">Dashboard</h1><small>Production · Inventory · Accounting</small></div><div class="header-actions"><button class="btn secondary" id="changePasswordButton">Change Password</button><button class="btn secondary" id="logout">Logout</button></div></header>
       <div class="content"><div id="notice" class="notice hide"></div><div id="view"></div></div>
     </main>
   </div>
   <footer class="site-footer">© 2026 Kageshwori Mineral Water Industries Limited <span>•</span> Designed &amp; Developed by <strong>Nirajan Aryal</strong> (<a href="tel:9851113811">9851113811</a>)</footer>
   <div id="globalBusy" class="busy-overlay hide" role="status" aria-live="polite"><div class="busy-card"><div class="spinner"></div><strong id="busyText">Processing your request…</strong><small>Please wait; do not submit again.</small></div></div>
   <div id="modalOverlay" class="modal-overlay hide" role="presentation"><div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div id="modalSymbol" class="modal-symbol">✓</div><h2 id="modalTitle">Notification</h2><p id="modalText"></p><div id="modalInputWrap" class="hide"><label for="modalInput">New password</label><input id="modalInput" type="password" autocomplete="new-password" minlength="12" placeholder="At least 12 characters"></div><div class="modal-actions"><button type="button" class="btn secondary hide" id="modalCancel">Cancel</button><button type="button" class="btn" id="modalOK">OK</button></div></div></div>
+  <div id="recoveryOverlay" class="modal-overlay hide">
+    <section class="modal-card recovery-card" role="dialog" aria-modal="true" aria-labelledby="recoveryTitle">
+      <button type="button" class="recovery-close" id="recoveryClose" aria-label="Close">×</button>
+      <h2 id="recoveryTitle">Reset password</h2>
+      <p id="recoveryDescription">Enter your account username and verified recovery email.</p>
+      <form id="recoveryForm">
+        <div id="recoveryIdentity">
+          <label for="recoveryUsername">Username</label><input id="recoveryUsername" autocomplete="username" required>
+          <label for="recoveryEmail">Registered email</label><input id="recoveryEmail" type="email" autocomplete="email" required>
+        </div>
+        <div id="recoveryOtp" class="hide"><label for="recoveryCode">Six-digit email code</label><input id="recoveryCode" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code"></div>
+        <div id="recoveryNewPassword" class="hide"><label for="recoveryPassword">New password (12+ characters)</label><input id="recoveryPassword" type="password" minlength="12" autocomplete="new-password"><label for="recoveryConfirm">Confirm password</label><input id="recoveryConfirm" type="password" minlength="12" autocomplete="new-password"></div>
+        <button type="submit" class="btn login-submit" id="recoverySubmit">Send verification code</button>
+        <button type="button" class="forgot-link hide" id="recoveryRestart">Start again</button>
+      </form>
+    </section>
+  </div>
   <iframe id="bridge" title="Secure Apps Script bridge" style="display:none"></iframe>
   <script>
     'use strict';
@@ -188,6 +228,7 @@
         $('modalCancel').classList.toggle('hide', type !== 'confirm' && type !== 'password');
         $('modalInputWrap').classList.toggle('hide', type !== 'password');
         $('modalInput').value = '';
+        $('modalInput').minLength = options.minLength || 12;
         $('modalOverlay').classList.remove('hide');
         $('modalOK').focus();
       });
@@ -197,8 +238,8 @@
       if ($('modalOverlay').classList.contains('hide')) return;
       const isPassword = !$('modalInputWrap').classList.contains('hide');
       const value = isPassword ? $('modalInput').value : true;
-      if (accepted && isPassword && value.length < 12) {
-        $('modalInput').setCustomValidity('Password must be at least 12 characters.');
+      if (accepted && isPassword && value.length < $('modalInput').minLength) {
+        $('modalInput').setCustomValidity('Password must contain at least ' + $('modalInput').minLength + ' characters.');
         $('modalInput').reportValidity();
         $('modalInput').setCustomValidity('');
         return;
@@ -242,7 +283,7 @@
       if (event.origin !== SCRIPT_ORIGIN || event.source !== $('bridge').contentWindow) return;
       if (event.data?.kind === 'ERP_READY') {
         state.ready = true;
-        $('connection').textContent = 'Secure connection ready';
+        $('connection').textContent = ''; 
       }
       if (event.data?.kind !== 'ERP_RESPONSE') return;
       const pending = state.pending.get(event.data.id);
@@ -257,7 +298,8 @@
     if (APPS_SCRIPT_URL.startsWith('https://script.google.com/macros/s/')) {
       $('bridge').src = APPS_SCRIPT_URL;
     } else {
-      $('connection').textContent = 'Configure APPS_SCRIPT_URL in index.html';
+      $('connection').textContent = 'Connection configuration required';
+      $('connection').classList.remove('hide');
     }
 
     $('loginForm').addEventListener('submit', async event => {
@@ -278,6 +320,86 @@
         navigate(state.permissions.includes('dashboard') ? 'dashboard' : (state.permissions[0] || 'userAccess'));
       } catch (error) { await notify(error.message, true); }
       finally { busy(false); $('loginButton').disabled = false; }
+    });
+
+    // Password recovery: no passwords or OTPs stored in the browser.
+    const recovery = {step:0,challengeId:'',ticket:'',busy:false};
+    function showRecoveryStep() {
+      $('recoveryIdentity').classList.toggle('hide',recovery.step !== 0);
+      $('recoveryOtp').classList.toggle('hide',recovery.step !== 1);
+      $('recoveryNewPassword').classList.toggle('hide',recovery.step !== 2);
+      $('recoveryRestart').classList.toggle('hide',recovery.step === 0);
+      $('recoverySubmit').textContent = ['Send verification code','Verify code','Update password'][recovery.step];
+      $('recoveryTitle').textContent = ['Reset password','Email verification','Choose a new password'][recovery.step];
+      $('recoveryDescription').textContent = [
+        'Enter your username and verified recovery email.',
+        'Enter the six-digit code sent to your registered email. It expires after five minutes.',
+        'Create a strong new password. Your previous password will stop working.'
+      ][recovery.step];
+    }
+    function closeRecovery() {
+      if (recovery.busy) return;
+      $('recoveryOverlay').classList.add('hide');
+      $('recoveryForm').reset();
+      recovery.step=0;recovery.challengeId='';recovery.ticket='';showRecoveryStep();
+    }
+    $('forgotButton').addEventListener('click',()=>{
+      $('recoveryOverlay').classList.remove('hide');
+      $('recoveryUsername').value=$('username').value.trim();
+      showRecoveryStep();
+    });
+    $('recoveryClose').addEventListener('click',closeRecovery);
+    $('recoveryRestart').addEventListener('click',closeRecovery);
+    $('recoveryForm').addEventListener('submit',async event=>{
+      event.preventDefault();
+      if (recovery.busy) return;
+      recovery.busy=true;$('recoverySubmit').disabled=true;
+      busy(true,'Processing account recovery…');
+      try {
+        if (recovery.step === 0) {
+          const result=await request('requestReset',{
+            username:$('recoveryUsername').value.trim(),email:$('recoveryEmail').value.trim()});
+          if (!result.challengeId) {
+            closeRecoveryAfterRequest_();
+            await notify(result.message);
+            return;
+          }
+          recovery.challengeId=result.challengeId;
+          recovery.step=1;showRecoveryStep();
+        } else if (recovery.step === 1) {
+          const result=await request('verifyReset',{
+            challengeId:recovery.challengeId,otp:$('recoveryCode').value.trim()});
+          recovery.ticket=result.resetTicket;
+          recovery.step=2;showRecoveryStep();
+        } else {
+          if ($('recoveryPassword').value !== $('recoveryConfirm').value)
+            throw Error('Passwords do not match.');
+          const result=await request('completeReset',{
+            challengeId:recovery.challengeId,resetTicket:recovery.ticket,
+            password:$('recoveryPassword').value});
+          closeRecoveryAfterRequest_();
+          await notify(result.message);
+        }
+      } catch(error) { await notify(error.message,true); }
+      finally { recovery.busy=false;$('recoverySubmit').disabled=false;busy(false); }
+    });
+    function closeRecoveryAfterRequest_() {
+      $('recoveryOverlay').classList.add('hide');
+      $('recoveryForm').reset();recovery.step=0;recovery.challengeId='';recovery.ticket='';showRecoveryStep();
+    }
+    $('changePasswordButton').addEventListener('click',async()=>{
+      const current=await openModal('Enter your current password.','password',{title:'Current password',minLength:1});
+      if (!current) return;
+      const next=await openModal('Enter a new password of at least 12 characters.','password',{title:'New password',minLength:12});
+      if (!next) return;
+      await withBusy(async()=>{
+        try {
+          const result=await request('changePassword',{currentPassword:current,newPassword:next});
+          await notify(result.message);
+          state.token='';state.role='';state.permissions=[];
+          $('app').classList.add('hide');$('loginScreen').classList.remove('hide');
+        } catch(error) { await notify(error.message,true); }
+      },'Updating password…');
     });
 
     $('logout').addEventListener('click', async () => {
