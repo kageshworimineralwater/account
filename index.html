@@ -276,6 +276,9 @@
     // REQUIRED CONFIGURATION: paste your deployed Apps Script /exec URL.
     const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbygaPd5kMTvfanz5kWlef0rb6snJA7JtHAkeSOZgaL5s0zO7dDL51vxxS96rJDN5yc9Vw/exec';
     const SCRIPT_ORIGIN = 'https://script.google.com';
+    const GOOGLE_SANDBOX_ORIGIN = /^https:\/\/([a-z0-9-]+\.)*googleusercontent\.com$/i;
+    let bridgeWindow = null;
+    let bridgeOrigin = '';
     const pages = [
       ['dashboard', '▦ Dashboard'], ['customers', '♙ Customers'],
       ['products', '◈ Products'], ['vehicles', '▣ Vehicles'],
@@ -347,32 +350,51 @@
       finally { busy(false); }
     }
 
-    // The bridge is a Google-hosted Apps Script HTML page. It forwards
-    // authenticated requests via google.script.run; no public JSONP endpoints.
+    // The Google Apps Script HTML service creates a nested sandbox frame.
+    // The ERP_READY event comes from that inner frame, not the outer iframe.
+    // Retain its exact window and origin for all subsequent requests.
     function request(action, data = {}) {
-      if (!state.ready) return Promise.reject(Error('Backend not connected. Check deployment URL.'));
+      if (!state.ready || !bridgeWindow || !bridgeOrigin) {
+        return Promise.reject(Error('Backend not connected. Check Web App deployment.'));
+      }
+
       return new Promise((resolve, reject) => {
         const id = ++state.seq;
         const timeout = setTimeout(() => {
           state.pending.delete(id);
           reject(Error('Request timed out. Please verify transaction before retrying.'));
         }, 45000);
+
         state.pending.set(id, {resolve, reject, timeout});
-        $('bridge').contentWindow.postMessage({kind:'ERP_REQUEST',id,
-          payload:{action,data,token:state.token}},'*');
+        bridgeWindow.postMessage({
+          kind: 'ERP_REQUEST',
+          id,
+          payload: {action, data, token: state.token}
+        }, bridgeOrigin);
       });
     }
 
     window.addEventListener('message', event => {
-      if (event.source !== $('bridge').contentWindow) return;
-      if (event.origin !== SCRIPT_ORIGIN && !/^https:\/\/([a-z0-9-]+\.)*googleusercontent\.com$/i.test(event.origin)) return;
-      if (event.data?.kind === 'ERP_READY') {
+      if (event.origin !== SCRIPT_ORIGIN && !GOOGLE_SANDBOX_ORIGIN.test(event.origin)) return;
+      if (!event.source || !event.data) return;
+
+      if (event.data.kind === 'ERP_READY') {
+        // Only the Apps Script bridge should send ERP_READY. Pin the
+        // responding frame for this page session, including its exact origin.
+        if (bridgeWindow && event.source !== bridgeWindow) return;
+        bridgeWindow = event.source;
+        bridgeOrigin = event.origin;
         state.ready = true;
-        $('connection').textContent = ''; 
+        $('connection').textContent = '';
+        $('connection').classList.add('hide');
+        return;
       }
-      if (event.data?.kind !== 'ERP_RESPONSE') return;
+
+      if (event.data.kind !== 'ERP_RESPONSE') return;
+      if (!state.ready || event.source !== bridgeWindow || event.origin !== bridgeOrigin) return;
       const pending = state.pending.get(event.data.id);
       if (!pending) return;
+
       clearTimeout(pending.timeout);
       state.pending.delete(event.data.id);
       if (event.data.error) pending.reject(Error(event.data.error));
