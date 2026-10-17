@@ -105,7 +105,6 @@
     .site-footer { min-height:54px;padding:17px;text-align:center;font-size:11px;color:#6d7d90;background:#fff;border-top:1px solid var(--border); }
     .site-footer span { margin:0 8px; }.site-footer a { color:#0d62bd;text-decoration:none;font-weight:800; }
     .busy-overlay,.modal-overlay { position:fixed;inset:0;z-index:9000;background:#071b3385;display:flex;align-items:center;justify-content:center;padding:18px;backdrop-filter:blur(4px); }
-    .modal-overlay { z-index:9100; }
     .busy-card,.modal-card { width:min(100%,410px);background:#fff;border-radius:22px;padding:32px;text-align:center;box-shadow:0 30px 90px #001b3844; }
     .busy-card strong,.busy-card small { display:block;margin-top:14px; }.busy-card small { color:var(--muted);font-size:12px; }
     .spinner { width:44px;height:44px;margin:0 auto;border-radius:50%;border:4px solid #e1edfa;border-top-color:#1168d8;animation:spin .7s linear infinite; }
@@ -117,14 +116,6 @@
     #modalInputWrap { text-align:left;margin-top:16px; }
     .status { margin-top:17px;text-align:center; }
     @media(max-width:640px){ .login { margin:4vh auto 5vh; }.login .panel { padding:26px; }.site-footer { font-size:10px;line-height:1.8; }.sidebar { width:100%; } }
-    /* V3.4 — concise, accessible connection indicator at the top of login */
-    .connection-indicator { display:inline-flex;align-items:center;gap:7px;margin:0 0 8px;
-      padding:7px 10px;border-radius:8px;font-size:11px;font-weight:700;line-height:1.3; }
-    .connection-indicator::before { content:'';width:7px;height:7px;flex:none;
-      border-radius:50%;background:currentColor; }
-    .connection-indicator.is-connected { background:#e8f8f1;color:#147c55; }
-    .connection-indicator.is-offline { background:#fff0f0;color:#bb303c; }
-    .connection-indicator.is-connecting { background:#edf3fa;color:#56738e; }
     /* V3.2 — compact premium authentication */
     body:has(#loginScreen:not(.hide)) { background:linear-gradient(125deg,#071c35 0%,#12385b 48%,#eaf4f9 48%,#f4f8fc 100%); }
     .login { max-width:470px; margin:clamp(12px,4vh,40px) auto 12px; }
@@ -147,13 +138,33 @@
     .site-footer { min-height:45px; }
     @media(min-width:700px) { body:has(#loginScreen:not(.hide)) { min-height:100vh;display:flex;flex-direction:column; } body:has(#loginScreen:not(.hide)) #loginScreen { flex:1; width:100%; } body:has(#loginScreen:not(.hide)) .site-footer { flex:none; } }
     @media(max-width:520px) { .login { margin:12px 12px; }.login .panel { padding:22px; } }
+
+    /* Targeted update: fixed viewport shell and visible footer */
+    html, body { height: 100%; min-height: 0; }
+    body { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+    #loginScreen { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+    body:has(#loginScreen:not(.hide)) #loginScreen {
+      display: flex; align-items: center; justify-content: center;
+      width: 100%; margin: 0 auto; padding: 12px 16px;
+    }
+    #loginScreen .panel { width: 100%; margin: 0; }
+    #app.layout { flex: 1 1 auto; min-height: 0; height: auto; overflow: hidden; }
+    #app .sidebar { height: 100%; overflow-y: auto; }
+    #app .main { height: 100%; min-height: 0; overflow-y: auto; }
+    .site-footer { flex: 0 0 auto; min-height: 45px; padding: 12px 8px; }
+    @media (max-width: 640px) {
+      #app.layout { overflow-y: auto; }
+      #app .sidebar, #app .main { height: auto; overflow: visible; }
+      body:has(#loginScreen:not(.hide)) #loginScreen { padding: 8px 12px; }
+      #loginScreen .panel { padding: 18px; }
+      .site-footer { padding: 8px 5px; font-size: 9px; }
+    }
   </style>
 </head>
 <body>
   <div id="loginScreen" class="login">
     <section class="panel">
       <img class="brand-logo" src="./logo.jpg" alt="Kageshwori Water company logo" onerror="this.src='./logo.png'">
-      <p class="connection-indicator is-connecting" id="connection" role="status" aria-live="polite">Connecting to server...</p>
       <div class="login-eyebrow">ENTERPRISE FINANCE PLATFORM</div><h2>Kageshwori Water ERP</h2>
       <p class="hint">कागेश्वरी मिनरल वाटर इन्डष्ट्रिज लिमिटेड<br>Secure Accounting System</p>
       <form id="loginForm">
@@ -162,6 +173,7 @@
         <button class="btn login-submit" id="loginButton" type="submit">Sign In</button>
         <button class="forgot-link" type="button" id="forgotButton">Forgot password?</button>
       </form>
+      <p class="status hide" id="connection" aria-live="polite"></p>
     </section>
   </div>
   <div id="app" class="layout hide">
@@ -194,33 +206,13 @@
       </form>
     </section>
   </div>
-
+  <iframe id="bridge" title="Secure Apps Script bridge" style="display:none"></iframe>
   <script>
     'use strict';
 
     // REQUIRED CONFIGURATION: paste your deployed Apps Script /exec URL.
     const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbygaPd5kMTvfanz5kWlef0rb6snJA7JtHAkeSOZgaL5s0zO7dDL51vxxS96rJDN5yc9Vw/exec';
-    // GitHub Pages is the permanent public URL. The ERP itself runs
-    // inside Apps Script HTML Service, enabling direct google.script.run.
-    if (!window.google?.script?.run) {
-      document.body.innerHTML = '';
-      document.body.style.margin = '0';
-      document.body.style.minHeight = '100vh';
-
-      const appFrame = document.createElement('iframe');
-      appFrame.src = APPS_SCRIPT_URL;
-      appFrame.title = 'Kageshwori Water ERP';
-      appFrame.style.cssText = [
-        'width:100%',
-        'height:100vh',
-        'border:0',
-        'display:block',
-        'background:#edf4f8'
-      ].join(';');
-      appFrame.setAttribute('allow', 'clipboard-write');
-      document.body.appendChild(appFrame);
-    } else {
-
+    const SCRIPT_ORIGIN = 'https://script.google.com';
     const pages = [
       ['dashboard', '▦ Dashboard'], ['customers', '♙ Customers'],
       ['products', '◈ Products'], ['vehicles', '▣ Vehicles'],
@@ -230,7 +222,7 @@
       ['settlements', '✓ Vehicle Settlement'], ['ledger', '☷ Ledger'],
       ['records', '≡ Transaction Records'], ['userAccess', '♙ User Access']
     ];
-    const state = { bridgeOrigin: '', token: '', role: '', permissions: [], ready: false, current: 'dashboard', masters: null, pending: new Map(), seq: 0 };
+    const state = { token: '', role: '', permissions: [], ready: false, current: 'dashboard', masters: null, pending: new Map(), seq: 0 };
     const $ = id => document.getElementById(id);
     const fmt = n => Number(n || 0).toLocaleString('en-IN', {maximumFractionDigits:2});
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g,
@@ -292,55 +284,45 @@
       finally { busy(false); }
     }
 
-    function setConnectionStatus(status) {
-      const element = $('connection');
-      element.className = 'connection-indicator is-' + status;
-      element.textContent = status === 'connected' ? 'System Connected' :
-        status === 'offline' ? 'Server Connection Unavailable' :
-        'Connecting to server...';
-    }
-
-    // Apps Script HTML Service provides an authenticated RPC transport.
-    // No postMessage, JSONP, or cross-origin fetch is used.
+    // The bridge is a Google-hosted Apps Script HTML page. It forwards
+    // authenticated requests via google.script.run; no public JSONP endpoints.
     function request(action, data = {}) {
+      if (!state.ready) return Promise.reject(Error('Backend not connected. Check deployment URL.'));
       return new Promise((resolve, reject) => {
-        google.script.run
-          .withSuccessHandler(result => {
-            if (!result || result.ok === false) {
-              reject(new Error(result?.error || 'Server request failed.'));
-              return;
-            }
-            resolve(result.data);
-          })
-          .withFailureHandler(error => {
-            reject(new Error(error?.message || String(error)));
-          })
-          .erpRequest({
-            action: action,
-            data: data,
-            token: state.token
-          });
+        const id = ++state.seq;
+        const timeout = setTimeout(() => {
+          state.pending.delete(id);
+          reject(Error('Request timed out. Please verify transaction before retrying.'));
+        }, 45000);
+        state.pending.set(id, {resolve, reject, timeout});
+        $('bridge').contentWindow.postMessage({kind:'ERP_REQUEST',id,
+          payload:{action,data,token:state.token}},'*');
       });
     }
 
-    async function checkServerConnection() {
-      setConnectionStatus('connecting');
-      try {
-        const status = await request('health');
+    window.addEventListener('message', event => {
+      if (event.source !== $('bridge').contentWindow) return;
+      if (event.origin !== SCRIPT_ORIGIN && !/^https:\/\/([a-z0-9-]+\.)*googleusercontent\.com$/i.test(event.origin)) return;
+      if (event.data?.kind === 'ERP_READY') {
         state.ready = true;
-        setConnectionStatus('connected');
-        const indicator = $('connection');
-        indicator.textContent =
-          'Database Connected Successfully • ' +
-          status.userRecords + ' user records';
-      } catch (error) {
-        state.ready = false;
-        setConnectionStatus('offline');
-        $('connection').title = error.message;
+        $('connection').textContent = ''; 
       }
-    }
+      if (event.data?.kind !== 'ERP_RESPONSE') return;
+      const pending = state.pending.get(event.data.id);
+      if (!pending) return;
+      clearTimeout(pending.timeout);
+      state.pending.delete(event.data.id);
+      if (event.data.error) pending.reject(Error(event.data.error));
+      else if (event.data.result?.ok === false) pending.reject(Error(event.data.result.error));
+      else pending.resolve(event.data.result?.data);
+    });
 
-    checkServerConnection();
+    if (APPS_SCRIPT_URL.startsWith('https://script.google.com/macros/s/')) {
+      $('bridge').src = APPS_SCRIPT_URL;
+    } else {
+      $('connection').textContent = 'Connection configuration required';
+      $('connection').classList.remove('hide');
+    }
 
     $('loginForm').addEventListener('submit', async event => {
       event.preventDefault();
@@ -491,19 +473,16 @@
           <form id="createAccount">
             ${field('newUsername','New username')}
             ${field('newPassword','Password (minimum 12 characters)','password')}
-            ${field('newEmail','Recovery email','email','required')}
             <label>Account Type</label><select name="role"><option>Admin</option><option>Super Admin</option></select>
             <p><button class="btn">Create account</button></p>
           </form></section>
         <section class="panel"><h2>Existing accounts</h2>
           ${users.map(u => `<div class="panel" style="margin-bottom:12px">
             <strong>${escapeHtml(u.username)}</strong> — ${escapeHtml(u.role)}
-             <span class="hint">${escapeHtml(u.email || 'No recovery email')}</span>
             <span class="hint">(${escapeHtml(u.status)})</span>
             <div style="margin:12px 0">
               <button class="btn secondary" data-toggle="${escapeHtml(u.username)}" data-status="${u.status==='Active'?'Inactive':'Active'}">${u.status==='Active'?'Deactivate':'Activate'}</button>
               <button class="btn secondary" data-password="${escapeHtml(u.username)}">Reset password</button>
-
             </div>
             ${u.role==='Admin' ? `<div class="form-grid">${entries.map(([key,label])=>
               `<label><input type="checkbox" data-perm="${escapeHtml(u.username)}" value="${key}" ${u.permissions.includes(key)?'checked':''}> ${escapeHtml(label)}</label>`).join('')}</div>
@@ -515,7 +494,7 @@
         const form = e.currentTarget;
         try {
           await withBusy(() => request('manageUsers',{command:'create',username:form.newUsername.value.trim(),
-            password:form.newPassword.value,email:form.newEmail.value.trim(),role:form.role.value}), 'Creating account…');
+            password:form.newPassword.value,role:form.role.value}), 'Creating account…');
           notify('Account created.'); await userAccess();
         } catch(err) { notify(err.message,true); }
       });
@@ -644,8 +623,6 @@
       const keys=Object.keys(rows[0]);
       container.innerHTML='<table><thead><tr>'+keys.map(k=>`<th>${escapeHtml(k)}</th>`).join('')+
         '</tr></thead><tbody>'+rows.map(row=>'<tr>'+keys.map(k=>`<td>${escapeHtml(row[k])}</td>`).join('')+'</tr>').join('')+'</tbody></table>';
-    }
-
     }
   </script>
 </body>
