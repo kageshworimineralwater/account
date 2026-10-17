@@ -117,6 +117,14 @@
     #modalInputWrap { text-align:left;margin-top:16px; }
     .status { margin-top:17px;text-align:center; }
     @media(max-width:640px){ .login { margin:4vh auto 5vh; }.login .panel { padding:26px; }.site-footer { font-size:10px;line-height:1.8; }.sidebar { width:100%; } }
+    /* V3.4 — concise, accessible connection indicator at the top of login */
+    .connection-indicator { display:inline-flex;align-items:center;gap:7px;margin:0 0 8px;
+      padding:7px 10px;border-radius:8px;font-size:11px;font-weight:700;line-height:1.3; }
+    .connection-indicator::before { content:'';width:7px;height:7px;flex:none;
+      border-radius:50%;background:currentColor; }
+    .connection-indicator.is-connected { background:#e8f8f1;color:#147c55; }
+    .connection-indicator.is-offline { background:#fff0f0;color:#bb303c; }
+    .connection-indicator.is-connecting { background:#edf3fa;color:#56738e; }
     /* V3.2 — compact premium authentication */
     body:has(#loginScreen:not(.hide)) { background:linear-gradient(125deg,#071c35 0%,#12385b 48%,#eaf4f9 48%,#f4f8fc 100%); }
     .login { max-width:470px; margin:clamp(12px,4vh,40px) auto 12px; }
@@ -145,6 +153,7 @@
   <div id="loginScreen" class="login">
     <section class="panel">
       <img class="brand-logo" src="./logo.jpg" alt="Kageshwori Water company logo" onerror="this.src='./logo.png'">
+      <p class="connection-indicator is-connecting" id="connection" role="status" aria-live="polite">Connecting to server...</p>
       <div class="login-eyebrow">ENTERPRISE FINANCE PLATFORM</div><h2>Kageshwori Water ERP</h2>
       <p class="hint">कागेश्वरी मिनरल वाटर इन्डष्ट्रिज लिमिटेड<br>Secure Accounting System</p>
       <form id="loginForm">
@@ -153,7 +162,6 @@
         <button class="btn login-submit" id="loginButton" type="submit">Sign In</button>
         <button class="forgot-link" type="button" id="forgotButton">Forgot password?</button>
       </form>
-      <p class="status hide" id="connection" aria-live="polite"></p>
     </section>
   </div>
   <div id="app" class="layout hide">
@@ -192,7 +200,18 @@
 
     // REQUIRED CONFIGURATION: paste your deployed Apps Script /exec URL.
     const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyrblxG9rVhhFi4DJmHjTrvNMJpG2510wGEkLcOrVcV0zT8ilM09q2WjxDtj7mpZV-d5Q/exec';
-    const SCRIPT_ORIGINS = ['https://script.google.com', 'https://script.googleusercontent.com'];
+    // Apps Script HTML Service redirects into a per-deployment Googleusercontent subdomain.
+    // Only accept messages from our own iframe AND these Google-owned HTTPS hosts.
+    const isGoogleBridgeOrigin = origin => {
+      try {
+        const url = new URL(origin);
+        return url.protocol === 'https:' && (
+          url.hostname === 'script.google.com' ||
+          url.hostname === 'script.googleusercontent.com' ||
+          url.hostname.endsWith('.script.googleusercontent.com')
+        );
+      } catch (_) { return false; }
+    };
     const pages = [
       ['dashboard', '▦ Dashboard'], ['customers', '♙ Customers'],
       ['products', '◈ Products'], ['vehicles', '▣ Vehicles'],
@@ -264,6 +283,14 @@
       finally { busy(false); }
     }
 
+    function setConnectionStatus(status) {
+      const element = $('connection');
+      element.className = 'connection-indicator is-' + status;
+      element.textContent = status === 'connected' ? 'System Connected' :
+        status === 'offline' ? 'Server Connection Unavailable' :
+        'Connecting to server...';
+    }
+
     // The bridge is a Google-hosted Apps Script HTML page. It forwards
     // authenticated requests via google.script.run; no public JSONP endpoints.
     function request(action, data = {}) {
@@ -281,11 +308,11 @@
     }
 
     window.addEventListener('message', event => {
-      if (!SCRIPT_ORIGINS.includes(event.origin) || event.source !== $('bridge').contentWindow) return;
+      if (event.source !== $('bridge').contentWindow || !isGoogleBridgeOrigin(event.origin)) return;
       if (event.data?.kind === 'ERP_READY') {
         state.bridgeOrigin = event.origin;
         state.ready = true;
-        $('connection').textContent = ''; 
+        setConnectionStatus('connected');
       }
       if (event.data?.kind !== 'ERP_RESPONSE') return;
       const pending = state.pending.get(event.data.id);
@@ -301,20 +328,20 @@
       $('bridge').addEventListener('load', () => {
         // The iframe can redirect to Google's HTML-service host.
         // The bridge sends READY after it receives HELLO.
-        for (const origin of SCRIPT_ORIGINS) {
-          $('bridge').contentWindow.postMessage({kind:'ERP_HELLO'}, origin);
-        }
+        // HELLO contains no credentials or business data. The iframe's actual
+        // redirected origin is not knowable beforehand, so wildcard is used
+        // ONLY for this harmless handshake. All real requests use the verified
+        // exact event.origin learned from ERP_READY.
+        $('bridge').contentWindow.postMessage({kind:'ERP_HELLO'}, '*');
       });
       $('bridge').src = APPS_SCRIPT_URL;
       setTimeout(() => {
         if (!state.ready) {
-          $('connection').textContent = 'Unable to connect to accounting server. Check Apps Script deployment.';
-          $('connection').classList.remove('hide');
+          setConnectionStatus('offline');
         }
       }, 12000);
     } else {
-      $('connection').textContent = 'Connection configuration required';
-      $('connection').classList.remove('hide');
+      setConnectionStatus('offline');
     }
 
     $('loginForm').addEventListener('submit', async event => {
