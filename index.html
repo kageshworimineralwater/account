@@ -1,104 +1,652 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ne">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kageshwori Water ERP | Secure Login</title>
-  <meta name="description" content="Kageshwori Mineral Water Industries Limited ERP">
-
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kageshwori Water ERP | Accounting & Inventory</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    * {
-      box-sizing: border-box;
+    :root {
+      --navy: #0b2544;
+      --navy-light: #163b63;
+      --blue: #1266d4;
+      --aqua: #0bb8c7;
+      --background: #f3f7fc;
+      --surface: #fff;
+      --text: #182c45;
+      --muted: #6e7e91;
+      --border: #dce5ef;
+      --danger: #c33c42;
+      --radius: 15px;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--text); background: var(--background); font-family: Inter, 'Noto Sans Devanagari', sans-serif; }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+    .layout { display: flex; min-height: 100vh; }
+    .sidebar { width: 248px; flex: none; background: var(--navy); color: #e7f0ff; padding: 22px 14px; }
+    .brand { display: flex; align-items: center; gap: 12px; padding: 8px 10px 25px; border-bottom: 1px solid #ffffff22; margin-bottom: 16px; }
+    .brand-icon { width: 44px; height: 44px; border-radius: 13px; background: linear-gradient(135deg, #11d6d2, #1575ed); display: grid; place-items: center; font-size: 26px; }
+    .brand strong { display: block; font-size: 14px; }
+    .brand small { color: #b8cbe3; font-size: 11px; }
+    .nav { width: 100%; text-align: left; border: 0; color: #d1e0f4; background: transparent; padding: 12px 14px; border-radius: 10px; margin: 3px 0; }
+    .nav:hover, .nav.active { background: #ffffff1c; color: white; }
+    .main { flex: 1; min-width: 0; }
+    header { display: flex; justify-content: space-between; align-items: center; background: white; padding: 21px 30px; border-bottom: 1px solid var(--border); gap: 10px; }
+    header h1 { font-size: 19px; margin: 0; }
+    header small { color: var(--muted); }
+    .content { max-width: 1260px; margin: 0 auto; padding: 28px; }
+    .cards { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 16px; margin-bottom: 24px; }
+    .card, .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 6px 22px #18375a08; }
+    .card { padding: 22px; }
+    .card span { color: var(--muted); font-size: 12px; }
+    .card strong { display: block; font-size: 26px; margin-top: 10px; color: var(--navy); }
+    .panel { padding: 25px; margin-bottom: 20px; }
+    .panel h2 { margin: 0 0 8px; font-size: 19px; }
+    .hint { font-size: 12px; color: var(--muted); margin: 0 0 18px; line-height: 1.8; }
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 18px; }
+    label { display: block; font-weight: 600; font-size: 12px; margin-bottom: 7px; }
+    input, select, textarea { width: 100%; border: 1px solid #cdd9e7; border-radius: 9px; padding: 12px; background: white; color: var(--text); }
+    input:focus, select:focus, textarea:focus { outline: 2px solid #b4d6ff; border-color: var(--blue); }
+    .field-wide { grid-column: 1 / -1; }
+    .actions { display: flex; gap: 10px; align-items: center; margin-top: 22px; flex-wrap: wrap; }
+    .btn { border: none; padding: 11px 18px; border-radius: 9px; background: var(--blue); color: white; font-weight: 700; }
+    .btn.secondary { background: #e9f1fc; color: var(--navy); }
+    .btn:disabled { opacity: .5; cursor: wait; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { text-align: left; padding: 12px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    th { color: var(--muted); background: #f8fbff; }
+    .notice { padding: 13px 16px; border-radius: 10px; background: #eaf3ff; color: #174f88; margin-bottom: 18px; font-size: 13px; }
+    .notice.error { background: #fff0f0; color: var(--danger); }
+    .login { max-width: 440px; margin: 3vh auto; }
+    .login .panel { padding: 32px; }
+    .hide { display: none !important; }
+    .status { font-size: 12px; color: var(--muted); }
+    .tag { background: #dff6f3; color: #147569; padding: 5px 10px; border-radius: 20px; font-size: 11px; }
+    @media (max-width: 900px) { .cards { grid-template-columns: repeat(2, 1fr); } .sidebar { width: 205px; } }
+    @media (max-width: 640px) {
+      .layout { display: block; } .sidebar { width: 100%; padding: 12px; }
+      .brand { margin-bottom: 7px; padding-bottom: 10px; }
+      #navigation { display: flex; overflow-x: auto; gap: 5px; }
+      .nav { white-space: nowrap; width: auto; font-size: 12px; }
+      header { padding: 15px; } .content { padding: 14px; }
+      .cards, .form-grid { grid-template-columns: 1fr; }
+      .panel { padding: 17px; }
     }
 
-    html,
-    body {
-      width: 100%;
-      height: 100%;
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: #edf4f8;
-    }
-
-    .app-frame {
-      display: block;
-      width: 100%;
-      height: 100vh;
-      border: 0;
-      background: #edf4f8;
-    }
-
-    .setup-message {
-      display: none;
-      position: fixed;
-      inset: 0;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-      text-align: center;
-      color: #183a52;
-      background: #edf4f8;
-    }
-
-    .setup-message.visible {
-      display: flex;
-    }
-
-    .setup-card {
-      width: min(480px, 100%);
-      padding: 30px;
-      border-radius: 18px;
-      background: #fff;
-      box-shadow: 0 18px 45px rgba(13, 43, 65, 0.1);
-    }
-
-    .setup-card a {
-      color: #0a6c9a;
-    }
+    /* V3: universal enterprise accounting interface */
+    :root { --navy:#0b1d35; --navy-light:#14385c; --blue:#145ad0; --aqua:#08aab5; --background:#f2f5fa; --border:#e0e6ee; --radius:17px; }
+    body { background:radial-gradient(circle at 85% 0%,#e5f2ff 0%,transparent 36%),var(--background); }
+    .layout { min-height:calc(100vh - 54px); }
+    .sidebar { width:268px; background:linear-gradient(160deg,#091a30,#13365a); box-shadow:6px 0 30px #0a25420d; }
+    .brand-logo { width:54px;height:54px;object-fit:contain;border-radius:15px;background:white;padding:5px;box-shadow:0 7px 24px #112c461a;flex:none; }
+    .brand strong { font-size:15px;line-height:1.5; }
+    .nav { font-size:13px;transition:background .2s,transform .2s; }
+    .nav:hover { transform:translateX(2px); }
+    .nav.active { background:linear-gradient(90deg,#1463bc,#1576a5);box-shadow:0 5px 20px #0a152f2c; }
+    header { min-height:82px;box-shadow:0 4px 18px #172e4406; }
+    header h1 { font-size:23px;letter-spacing:-.5px; }
+    .card,.panel { box-shadow:0 8px 34px #102a4609; }
+    .card { border-top:3px solid #24a5c1; }
+    .card strong { font-size:24px; }
+    .btn { min-height:44px;transition:filter .18s,transform .18s;box-shadow:0 4px 12px #145ad015; }
+    .btn:hover:not(:disabled) { filter:brightness(.94);transform:translateY(-1px); }
+    .btn:focus-visible,button:focus-visible { outline:3px solid #7bc2ff;outline-offset:2px; }
+    .login { max-width:475px;margin:8vh auto 5vh;padding:0 16px; }
+    .login .panel { padding:40px;box-shadow:0 25px 75px #17345018;border:1px solid #e1e9f4; }
+    .login .brand-logo { width:72px;height:72px;padding:8px;margin-bottom:20px; }
+    .login h2 { font-size:28px;letter-spacing:-1px;margin:8px 0; }
+    .login-eyebrow { color:#0e829d;letter-spacing:2px;font-size:10px;font-weight:800;margin-top:14px; }
+    .login .hint { font-size:13px;margin-bottom:28px; }
+    .login input { min-height:51px;border-radius:12px; }
+    .login-submit { width:100%;margin-top:10px;font-size:14px; }
+    .site-footer { min-height:54px;padding:17px;text-align:center;font-size:11px;color:#6d7d90;background:#fff;border-top:1px solid var(--border); }
+    .site-footer span { margin:0 8px; }.site-footer a { color:#0d62bd;text-decoration:none;font-weight:800; }
+    .busy-overlay,.modal-overlay { position:fixed;inset:0;z-index:9000;background:#071b3385;display:flex;align-items:center;justify-content:center;padding:18px;backdrop-filter:blur(4px); }
+    .modal-overlay { z-index:9100; }
+    .busy-card,.modal-card { width:min(100%,410px);background:#fff;border-radius:22px;padding:32px;text-align:center;box-shadow:0 30px 90px #001b3844; }
+    .busy-card strong,.busy-card small { display:block;margin-top:14px; }.busy-card small { color:var(--muted);font-size:12px; }
+    .spinner { width:44px;height:44px;margin:0 auto;border-radius:50%;border:4px solid #e1edfa;border-top-color:#1168d8;animation:spin .7s linear infinite; }
+    @keyframes spin { to {transform:rotate(360deg)} }
+    .modal-symbol { display:grid;place-items:center;width:52px;height:52px;margin:0 auto 12px;border-radius:17px;background:#e9f6f4;color:#117e78;font-size:24px;font-weight:800; }
+    .modal-symbol.error { background:#fff0f0;color:#bb3541; }
+    .modal-card h2 { margin:10px 0;font-size:21px; }.modal-card p { color:#52677e;line-height:1.7;overflow-wrap:anywhere; }
+    .modal-actions { display:flex;gap:10px;justify-content:center;margin-top:22px; }.modal-actions .btn { min-width:105px; }
+    #modalInputWrap { text-align:left;margin-top:16px; }
+    .status { margin-top:17px;text-align:center; }
+    @media(max-width:640px){ .login { margin:4vh auto 5vh; }.login .panel { padding:26px; }.site-footer { font-size:10px;line-height:1.8; }.sidebar { width:100%; } }
+    /* V3.4 — concise, accessible connection indicator at the top of login */
+    .connection-indicator { display:inline-flex;align-items:center;gap:7px;margin:0 0 8px;
+      padding:7px 10px;border-radius:8px;font-size:11px;font-weight:700;line-height:1.3; }
+    .connection-indicator::before { content:'';width:7px;height:7px;flex:none;
+      border-radius:50%;background:currentColor; }
+    .connection-indicator.is-connected { background:#e8f8f1;color:#147c55; }
+    .connection-indicator.is-offline { background:#fff0f0;color:#bb303c; }
+    .connection-indicator.is-connecting { background:#edf3fa;color:#56738e; }
+    /* V3.2 — compact premium authentication */
+    body:has(#loginScreen:not(.hide)) { background:linear-gradient(125deg,#071c35 0%,#12385b 48%,#eaf4f9 48%,#f4f8fc 100%); }
+    .login { max-width:470px; margin:clamp(12px,4vh,40px) auto 12px; }
+    .login .panel { padding:clamp(22px,3vw,34px); box-shadow:0 24px 70px #071d3540; border-radius:22px; }
+    .login-eyebrow { color:#0c7b91; font-size:10px; letter-spacing:1.8px; }
+    .login h2 { letter-spacing:-.7px; }
+    .login .hint { margin-bottom:16px; }
+    .login p { margin:12px 0; }
+    .login .brand-logo { width:58px;height:58px; }
+    .login-submit { width:100%; padding:14px; margin-top:10px; }
+    .forgot-link { display:block; border:0; background:none; color:#1163b4; font-weight:650; margin:13px auto 0; padding:6px; }
+    .forgot-link:hover { text-decoration:underline; }
+    .header-actions { display:flex;gap:8px;flex-wrap:wrap; }
+    .recovery-card { position:relative; width:min(440px,94vw); text-align:left; }
+    .recovery-card label { margin-top:14px; }
+    .recovery-card input { margin-bottom:6px; }
+    .recovery-close { position:absolute;right:18px;top:12px;border:0;background:none;font-size:26px;cursor:pointer; }
+    .recovery-card h2 { margin-right:24px; }
+    .recovery-card p { font-size:13px; }
+    .site-footer { min-height:45px; }
+    @media(min-width:700px) { body:has(#loginScreen:not(.hide)) { min-height:100vh;display:flex;flex-direction:column; } body:has(#loginScreen:not(.hide)) #loginScreen { flex:1; width:100%; } body:has(#loginScreen:not(.hide)) .site-footer { flex:none; } }
+    @media(max-width:520px) { .login { margin:12px 12px; }.login .panel { padding:22px; } }
   </style>
 </head>
-
 <body>
-  <iframe
-    id="erpApp"
-    class="app-frame"
-    title="Kageshwori Water ERP Login"
-    referrerpolicy="strict-origin-when-cross-origin"
-  ></iframe>
-
-  <div id="setupMessage" class="setup-message" role="status">
-    <div class="setup-card">
-      <h2>ERP Login Setup Required</h2>
-      <p>
-        Apps Script को नयाँ Web App Deployment बाट प्राप्त
-        /exec URL index.html मा राख्नुहोस्।
-      </p>
-    </div>
+  <div id="loginScreen" class="login">
+    <section class="panel">
+      <img class="brand-logo" src="./logo.jpg" alt="Kageshwori Water company logo" onerror="this.src='./logo.png'">
+      <p class="connection-indicator is-connecting" id="connection" role="status" aria-live="polite">Connecting to server...</p>
+      <div class="login-eyebrow">ENTERPRISE FINANCE PLATFORM</div><h2>Kageshwori Water ERP</h2>
+      <p class="hint">कागेश्वरी मिनरल वाटर इन्डष्ट्रिज लिमिटेड<br>Secure Accounting System</p>
+      <form id="loginForm">
+        <p><label for="username">Username</label><input id="username" required autocomplete="username"></p>
+        <p><label for="password">Password</label><input id="password" required type="password" autocomplete="current-password"></p>
+        <button class="btn login-submit" id="loginButton" type="submit">Sign In</button>
+        <button class="forgot-link" type="button" id="forgotButton">Forgot password?</button>
+      </form>
+    </section>
+  </div>
+  <div id="app" class="layout hide">
+    <aside class="sidebar">
+      <div class="brand"><img class="brand-logo" src="./logo.jpg" alt="Kageshwori Water company logo" onerror="this.src='./logo.png'"><div><strong>Kageshwori Water</strong><small>ERP & Accounting</small></div></div>
+      <nav id="navigation"></nav>
+    </aside>
+    <main class="main">
+      <header><div><h1 id="pageTitle">Dashboard</h1><small>Production · Inventory · Accounting</small></div><div class="header-actions"><button class="btn secondary" id="changePasswordButton">Change Password</button><button class="btn secondary" id="logout">Logout</button></div></header>
+      <div class="content"><div id="notice" class="notice hide"></div><div id="view"></div></div>
+    </main>
+  </div>
+  <footer class="site-footer">© 2026 Kageshwori Mineral Water Industries Limited <span>•</span> Designed &amp; Developed by <strong>Nirajan Aryal</strong> (<a href="tel:9851113811">9851113811</a>)</footer>
+  <div id="globalBusy" class="busy-overlay hide" role="status" aria-live="polite"><div class="busy-card"><div class="spinner"></div><strong id="busyText">Processing your request…</strong><small>Please wait; do not submit again.</small></div></div>
+  <div id="modalOverlay" class="modal-overlay hide" role="presentation"><div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div id="modalSymbol" class="modal-symbol">✓</div><h2 id="modalTitle">Notification</h2><p id="modalText"></p><div id="modalInputWrap" class="hide"><label for="modalInput">New password</label><input id="modalInput" type="password" autocomplete="new-password" minlength="12" placeholder="At least 12 characters"></div><div class="modal-actions"><button type="button" class="btn secondary hide" id="modalCancel">Cancel</button><button type="button" class="btn" id="modalOK">OK</button></div></div></div>
+  <div id="recoveryOverlay" class="modal-overlay hide">
+    <section class="modal-card recovery-card" role="dialog" aria-modal="true" aria-labelledby="recoveryTitle">
+      <button type="button" class="recovery-close" id="recoveryClose" aria-label="Close">×</button>
+      <h2 id="recoveryTitle">Reset password</h2>
+      <p id="recoveryDescription">Enter your account username and verified recovery email.</p>
+      <form id="recoveryForm">
+        <div id="recoveryIdentity">
+          <label for="recoveryUsername">Username</label><input id="recoveryUsername" autocomplete="username" required>
+          <label for="recoveryEmail">Registered email</label><input id="recoveryEmail" type="email" autocomplete="email" required>
+        </div>
+        <div id="recoveryOtp" class="hide"><label for="recoveryCode">Six-digit email code</label><input id="recoveryCode" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code"></div>
+        <div id="recoveryNewPassword" class="hide"><label for="recoveryPassword">New password (12+ characters)</label><input id="recoveryPassword" type="password" minlength="12" autocomplete="new-password"><label for="recoveryConfirm">Confirm password</label><input id="recoveryConfirm" type="password" minlength="12" autocomplete="new-password"></div>
+        <button type="submit" class="btn login-submit" id="recoverySubmit">Send verification code</button>
+        <button type="button" class="forgot-link hide" id="recoveryRestart">Start again</button>
+      </form>
+    </section>
   </div>
 
   <script>
     'use strict';
 
-    // Replace this value with your deployed Apps Script Web App /exec URL.
+    // REQUIRED CONFIGURATION: paste your deployed Apps Script /exec URL.
     const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbygaPd5kMTvfanz5kWlef0rb6snJA7JtHAkeSOZgaL5s0zO7dDL51vxxS96rJDN5yc9Vw/exec';
+    // GitHub Pages is the permanent public URL. The ERP itself runs
+    // inside Apps Script HTML Service, enabling direct google.script.run.
+    if (!window.google?.script?.run) {
+      document.body.innerHTML = '';
+      document.body.style.margin = '0';
+      document.body.style.minHeight = '100vh';
 
-    const frame = document.getElementById('erpApp');
-    const setupMessage = document.getElementById('setupMessage');
-
-    const validUrl =
-      /^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec(?:\?.*)?$/.test(
-        APPS_SCRIPT_URL
-      );
-
-    if (validUrl) {
-      frame.src = APPS_SCRIPT_URL;
+      const appFrame = document.createElement('iframe');
+      appFrame.src = APPS_SCRIPT_URL;
+      appFrame.title = 'Kageshwori Water ERP';
+      appFrame.style.cssText = [
+        'width:100%',
+        'height:100vh',
+        'border:0',
+        'display:block',
+        'background:#edf4f8'
+      ].join(';');
+      appFrame.setAttribute('allow', 'clipboard-write');
+      document.body.appendChild(appFrame);
     } else {
-      frame.hidden = true;
-      setupMessage.classList.add('visible');
+
+    const pages = [
+      ['dashboard', '▦ Dashboard'], ['customers', '♙ Customers'],
+      ['products', '◈ Products'], ['vehicles', '▣ Vehicles'],
+      ['production', '⚙ Production'], ['sales', '▤ Sales / VAT Invoice'],
+      ['returns', '↩ Empty Jar Return'], ['receipts', '৳ Customer Receipt'],
+      ['expenses', '▧ Expenses'], ['loads', '⇄ Vehicle Load'],
+      ['settlements', '✓ Vehicle Settlement'], ['ledger', '☷ Ledger'],
+      ['records', '≡ Transaction Records'], ['userAccess', '♙ User Access']
+    ];
+    const state = { bridgeOrigin: '', token: '', role: '', permissions: [], ready: false, current: 'dashboard', masters: null, pending: new Map(), seq: 0 };
+    const $ = id => document.getElementById(id);
+    const fmt = n => Number(n || 0).toLocaleString('en-IN', {maximumFractionDigits:2});
+    const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g,
+      c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const options = (rows, idKey, nameKey) => '<option value="">Select...</option>' +
+      (rows || []).map(row => `<option value="${escapeHtml(row[idKey])}">${escapeHtml(row[nameKey] || row[idKey])}</option>`).join('');
+
+    let modalResolve = null;
+    let busyCount = 0;
+
+    function busy(active, label = 'Processing your request…') {
+      busyCount = Math.max(0, busyCount + (active ? 1 : -1));
+      $('globalBusy').classList.toggle('hide', busyCount === 0);
+      if (active) $('busyText').textContent = label;
     }
 
-    // The Apps Script page displays its own actual database connection status.
-    // An iframe load event alone is NOT treated as proof of server connectivity.
+    function openModal(message, type = 'info', options = {}) {
+      return new Promise(resolve => {
+        modalResolve = resolve;
+        $('modalTitle').textContent = options.title || (type === 'error' ? 'Action could not be completed' : type === 'confirm' ? 'Please confirm' : 'Notification');
+        $('modalText').textContent = String(message);
+        $('modalSymbol').textContent = type === 'error' ? '!' : type === 'confirm' ? '?' : '✓';
+        $('modalSymbol').classList.toggle('error', type === 'error');
+        $('modalCancel').classList.toggle('hide', type !== 'confirm' && type !== 'password');
+        $('modalInputWrap').classList.toggle('hide', type !== 'password');
+        $('modalInput').value = '';
+        $('modalInput').minLength = options.minLength || 12;
+        $('modalOverlay').classList.remove('hide');
+        $('modalOK').focus();
+      });
+    }
+
+    function closeModal(accepted) {
+      if ($('modalOverlay').classList.contains('hide')) return;
+      const isPassword = !$('modalInputWrap').classList.contains('hide');
+      const value = isPassword ? $('modalInput').value : true;
+      if (accepted && isPassword && value.length < $('modalInput').minLength) {
+        $('modalInput').setCustomValidity('Password must contain at least ' + $('modalInput').minLength + ' characters.');
+        $('modalInput').reportValidity();
+        $('modalInput').setCustomValidity('');
+        return;
+      }
+      $('modalOverlay').classList.add('hide');
+      const done = modalResolve;
+      modalResolve = null;
+      if (done) done(accepted ? value : null);
+    }
+    $('modalOK').addEventListener('click', () => closeModal(true));
+    $('modalCancel').addEventListener('click', () => closeModal(false));
+    window.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && !$('modalOverlay').classList.contains('hide')) closeModal(false);
+    });
+    function notify(message, error = false) {
+      return openModal(message, error ? 'error' : 'info');
+    }
+    async function withBusy(operation, label) {
+      busy(true, label);
+      try { return await operation(); }
+      finally { busy(false); }
+    }
+
+    function setConnectionStatus(status) {
+      const element = $('connection');
+      element.className = 'connection-indicator is-' + status;
+      element.textContent = status === 'connected' ? 'System Connected' :
+        status === 'offline' ? 'Server Connection Unavailable' :
+        'Connecting to server...';
+    }
+
+    // Apps Script HTML Service provides an authenticated RPC transport.
+    // No postMessage, JSONP, or cross-origin fetch is used.
+    function request(action, data = {}) {
+      return new Promise((resolve, reject) => {
+        google.script.run
+          .withSuccessHandler(result => {
+            if (!result || result.ok === false) {
+              reject(new Error(result?.error || 'Server request failed.'));
+              return;
+            }
+            resolve(result.data);
+          })
+          .withFailureHandler(error => {
+            reject(new Error(error?.message || String(error)));
+          })
+          .erpRequest({
+            action: action,
+            data: data,
+            token: state.token
+          });
+      });
+    }
+
+    async function checkServerConnection() {
+      setConnectionStatus('connecting');
+      try {
+        const status = await request('health');
+        state.ready = true;
+        setConnectionStatus('connected');
+        const indicator = $('connection');
+        indicator.textContent =
+          'Database Connected Successfully • ' +
+          status.userRecords + ' user records';
+      } catch (error) {
+        state.ready = false;
+        setConnectionStatus('offline');
+        $('connection').title = error.message;
+      }
+    }
+
+    checkServerConnection();
+
+    $('loginForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      if ($('loginButton').disabled) return;
+      $('loginButton').disabled = true;
+      busy(true, 'Verifying account and permissions…');
+      try {
+        const data = await request('login', {username:$('username').value,password:$('password').value});
+        state.token = data.token;
+        state.role = data.role;
+        state.permissions = data.permissions || [];
+        renderNavigation();
+        $('password').value = '';
+        state.masters = await request('bootstrap');
+        $('loginScreen').classList.add('hide');
+        $('app').classList.remove('hide');
+        navigate(state.permissions.includes('dashboard') ? 'dashboard' : (state.permissions[0] || 'userAccess'));
+      } catch (error) { await notify(error.message, true); }
+      finally { busy(false); $('loginButton').disabled = false; }
+    });
+
+    // Password recovery: no passwords or OTPs stored in the browser.
+    const recovery = {step:0,challengeId:'',ticket:'',busy:false};
+    function showRecoveryStep() {
+      $('recoveryIdentity').classList.toggle('hide',recovery.step !== 0);
+      $('recoveryOtp').classList.toggle('hide',recovery.step !== 1);
+      $('recoveryNewPassword').classList.toggle('hide',recovery.step !== 2);
+      $('recoveryRestart').classList.toggle('hide',recovery.step === 0);
+      $('recoverySubmit').textContent = ['Send verification code','Verify code','Update password'][recovery.step];
+      $('recoveryTitle').textContent = ['Reset password','Email verification','Choose a new password'][recovery.step];
+      $('recoveryDescription').textContent = [
+        'Enter your username and verified recovery email.',
+        'Enter the six-digit code sent to your registered email. It expires after five minutes.',
+        'Create a strong new password. Your previous password will stop working.'
+      ][recovery.step];
+    }
+    function closeRecovery() {
+      if (recovery.busy) return;
+      $('recoveryOverlay').classList.add('hide');
+      $('recoveryForm').reset();
+      recovery.step=0;recovery.challengeId='';recovery.ticket='';showRecoveryStep();
+    }
+    $('forgotButton').addEventListener('click',()=>{
+      $('recoveryOverlay').classList.remove('hide');
+      $('recoveryUsername').value=$('username').value.trim();
+      showRecoveryStep();
+    });
+    $('recoveryClose').addEventListener('click',closeRecovery);
+    $('recoveryRestart').addEventListener('click',closeRecovery);
+    $('recoveryForm').addEventListener('submit',async event=>{
+      event.preventDefault();
+      if (recovery.busy) return;
+      recovery.busy=true;$('recoverySubmit').disabled=true;
+      busy(true,'Processing account recovery…');
+      try {
+        if (recovery.step === 0) {
+          const result=await request('requestReset',{
+            username:$('recoveryUsername').value.trim(),email:$('recoveryEmail').value.trim()});
+          if (!result.challengeId) {
+            closeRecoveryAfterRequest_();
+            await notify(result.message);
+            return;
+          }
+          recovery.challengeId=result.challengeId;
+          recovery.step=1;showRecoveryStep();
+        } else if (recovery.step === 1) {
+          const result=await request('verifyReset',{
+            challengeId:recovery.challengeId,otp:$('recoveryCode').value.trim()});
+          recovery.ticket=result.resetTicket;
+          recovery.step=2;showRecoveryStep();
+        } else {
+          if ($('recoveryPassword').value !== $('recoveryConfirm').value)
+            throw Error('Passwords do not match.');
+          const result=await request('completeReset',{
+            challengeId:recovery.challengeId,resetTicket:recovery.ticket,
+            password:$('recoveryPassword').value});
+          closeRecoveryAfterRequest_();
+          await notify(result.message);
+        }
+      } catch(error) { await notify(error.message,true); }
+      finally { recovery.busy=false;$('recoverySubmit').disabled=false;busy(false); }
+    });
+    function closeRecoveryAfterRequest_() {
+      $('recoveryOverlay').classList.add('hide');
+      $('recoveryForm').reset();recovery.step=0;recovery.challengeId='';recovery.ticket='';showRecoveryStep();
+    }
+    $('changePasswordButton').addEventListener('click',async()=>{
+      const current=await openModal('Enter your current password.','password',{title:'Current password',minLength:1});
+      if (!current) return;
+      const next=await openModal('Enter a new password of at least 12 characters.','password',{title:'New password',minLength:12});
+      if (!next) return;
+      await withBusy(async()=>{
+        try {
+          const result=await request('changePassword',{currentPassword:current,newPassword:next});
+          await notify(result.message);
+          state.token='';state.role='';state.permissions=[];
+          $('app').classList.add('hide');$('loginScreen').classList.remove('hide');
+        } catch(error) { await notify(error.message,true); }
+      },'Updating password…');
+    });
+
+    $('logout').addEventListener('click', async () => {
+      if (!await openModal('Do you want to sign out of the accounting system?', 'confirm', {title:'Confirm sign out'})) return;
+      busy(true, 'Signing out securely…');
+      try { await request('logout'); } catch (_) { /* session may have expired */ }
+      finally { busy(false); }
+      state.token = '';
+      state.role = '';
+      state.permissions = [];
+      renderNavigation();
+      $('app').classList.add('hide');
+      $('loginScreen').classList.remove('hide');
+    });
+
+    function renderNavigation() {
+      $('navigation').innerHTML = pages.filter(([id]) =>
+        id === 'userAccess' ? state.role === 'Super Admin' :
+        state.permissions.includes(id)).map(([id,title]) =>
+        `<button class="nav" data-page="${id}">${title}</button>`).join('');
+    }
+    $('navigation').addEventListener('click', event => {
+      const button = event.target.closest('[data-page]');
+      if (button) navigate(button.dataset.page);
+    });
+
+    function navigate(page) {
+      if (page === 'userAccess' && state.role !== 'Super Admin') return;
+      if (page !== 'userAccess' && !state.permissions.includes(page)) return;
+      state.current = page;
+      $('pageTitle').textContent = pages.find(p => p[0] === page)?.[1] || page;
+      document.querySelectorAll('.nav').forEach(button =>
+        button.classList.toggle('active',button.dataset.page === page));
+      $('notice').classList.add('hide');
+      if (page === 'userAccess') return withBusy(() => userAccess(), 'Loading user permissions…').catch(err => notify(err.message, true));
+      if (page === 'dashboard') return dashboard();
+      if (page === 'records') return records();
+      if (page === 'ledger') return ledgerForm();
+      renderForm(page);
+    }
+
+    async function userAccess() {
+      const result = await request('manageUsers', {command:'list'});
+      const entries = Object.entries(result.available);
+      const users = result.users;
+      $('view').innerHTML = `
+        <section class="panel"><h2>Super Admin — Account Management</h2>
+          <p class="hint">Accounts are read from the Google Sheet User tab. Inactive users lose access immediately.</p>
+          <form id="createAccount">
+            ${field('newUsername','New username')}
+            ${field('newPassword','Password (minimum 12 characters)','password')}
+            ${field('newEmail','Recovery email','email','required')}
+            <label>Account Type</label><select name="role"><option>Admin</option><option>Super Admin</option></select>
+            <p><button class="btn">Create account</button></p>
+          </form></section>
+        <section class="panel"><h2>Existing accounts</h2>
+          ${users.map(u => `<div class="panel" style="margin-bottom:12px">
+            <strong>${escapeHtml(u.username)}</strong> — ${escapeHtml(u.role)}
+             <span class="hint">${escapeHtml(u.email || 'No recovery email')}</span>
+            <span class="hint">(${escapeHtml(u.status)})</span>
+            <div style="margin:12px 0">
+              <button class="btn secondary" data-toggle="${escapeHtml(u.username)}" data-status="${u.status==='Active'?'Inactive':'Active'}">${u.status==='Active'?'Deactivate':'Activate'}</button>
+              <button class="btn secondary" data-password="${escapeHtml(u.username)}">Reset password</button>
+
+            </div>
+            ${u.role==='Admin' ? `<div class="form-grid">${entries.map(([key,label])=>
+              `<label><input type="checkbox" data-perm="${escapeHtml(u.username)}" value="${key}" ${u.permissions.includes(key)?'checked':''}> ${escapeHtml(label)}</label>`).join('')}</div>
+              <button class="btn" data-save="${escapeHtml(u.username)}">Save permissions</button>` : '<p class="hint">Super Admin: full access.</p>'}
+          </div>`).join('')}
+        </section>`;
+      $('createAccount').addEventListener('submit', async e => {
+        e.preventDefault();
+        const form = e.currentTarget;
+        try {
+          await withBusy(() => request('manageUsers',{command:'create',username:form.newUsername.value.trim(),
+            password:form.newPassword.value,email:form.newEmail.value.trim(),role:form.role.value}), 'Creating account…');
+          notify('Account created.'); await userAccess();
+        } catch(err) { notify(err.message,true); }
+      });
+      $('view').querySelectorAll('[data-toggle]').forEach(btn=>btn.onclick=async()=>{
+        if (!await openModal('Change account status to '+btn.dataset.status+'?', 'confirm')) return;
+        try {await withBusy(() => request('manageUsers',{command:'status',username:btn.dataset.toggle,status:btn.dataset.status}), 'Updating account status…');await userAccess();}
+        catch(err){notify(err.message,true);}
+      });
+      $('view').querySelectorAll('[data-password]').forEach(btn=>btn.onclick=async()=>{
+        const password=await openModal('Enter a new password for '+btn.dataset.password+' (minimum 12 characters).', 'password', {title:'Reset account password'});
+        if(password===null)return;
+        try {await withBusy(() => request('manageUsers',{command:'password',username:btn.dataset.password,password}), 'Updating password…');notify('Password updated.');}
+        catch(err){notify(err.message,true);}
+      });
+      $('view').querySelectorAll('[data-save]').forEach(btn=>btn.onclick=async()=>{
+        const username=btn.dataset.save;
+        const permissions=[...$('view').querySelectorAll('[data-perm]')]
+          .filter(el=>el.dataset.perm===username && el.checked).map(el=>el.value);
+        try {await withBusy(() => request('manageUsers',{command:'permissions',username,permissions}), 'Saving permissions…');await userAccess();notify('Permissions updated.');}
+        catch(err){notify(err.message,true);}
+      });
+    }
+
+    async function dashboard() {
+      $('view').innerHTML = '<div class="panel"><div class="spinner"></div><p class="status">Loading financial dashboard…</p></div>';
+      try {
+        const d = await withBusy(() => request('dashboard'), 'Loading financial overview…');
+        const cards = [
+          ['कुल उत्पादन',fmt(d.producedQty)],['कुल बिक्री','रु. '+fmt(d.salesAmount)],
+          ['प्राप्त रकम','रु. '+fmt(d.receiptAmount)],['खर्च','रु. '+fmt(d.expenseAmount)],
+          ['Sales Invoices',fmt(d.invoiceCount)],['Customers',fmt(d.customerCount)]
+        ];
+        $('view').innerHTML = `<div class="notice">${escapeHtml(d.warning)}</div><div class="cards">`+
+          cards.map(([label,value])=>`<div class="card"><span>${label}</span><strong>${value}</strong></div>`).join('')+
+          '</div><div class="panel"><h2>Accounting Control</h2><p class="hint">Posted transactions are included. Opening balances, VAT compliance, stock costing and detailed financial statements require reconciliation before production use.</p></div>';
+      } catch (error) { notify(error.message,true); }
+    }
+
+    const field = (name,label,type='text',extra='') =>
+      `<div><label for="f_${name}">${label}</label><input id="f_${name}" name="${name}" type="${type}" ${extra}></div>`;
+    const select = (name,label,items) =>
+      `<div><label for="f_${name}">${label}</label><select id="f_${name}" name="${name}" required>${items}</select></div>`;
+    const masters = () => state.masters || {customers:[],products:[],vehicles:[],accounts:[]};
+
+    function renderForm(page) {
+      const m=masters();
+      const customer=()=>select('customerId','ग्राहक / Customer',options(m.customers,'CustomerID','NameEN'));
+      const product=()=>select('productId','उत्पादन / Product',options(m.products,'ProductID','ProductName'));
+      const vehicle=()=>select('vehicleId','गाडी / Vehicle',options(m.vehicles,'VehicleID','Number'));
+      const qty=()=>field('quantity','Quantity','number','required min="0.001" step="any"');
+      const amount=()=>field('amount','Amount (NPR)','number','required min="0.01" step="0.01"');
+      const mode=()=>select('mode','Payment mode','<option value="CASH">Cash</option><option value="BANK">Bank</option>');
+      const forms={
+        customers:{action:'saveMaster',title:'Add Customer',fields:field('NameEN','Customer name','text','required')+field('NameNE','नेपाली नाम')+field('Mobile','Mobile')+field('Address','Address')+field('PAN','PAN / VAT')+field('CreditLimit','Credit limit','number','min="0"'),sheet:'Customers'},
+        products:{action:'saveMaster',title:'Add Product',fields:field('ProductName','Product name','text','required')+field('SizeML','Size (ml)','number')+field('Unit','Unit')+field('ProductCategory','Category')+field('DefaultRate','Default rate','number','min="0" step="0.01"')+field('TaxCode','Tax code'),sheet:'Products'},
+        vehicles:{action:'saveMaster',title:'Add Vehicle',fields:field('Number','Vehicle number','text','required')+field('DriverID','Driver ID')+select('Ownership','Ownership','<option value="Company">Company</option><option value="External">External</option>'),sheet:'Vehicles'},
+        production:{action:'production',title:'Daily Production',fields:product()+qty()+field('rejectQty','Rejected quantity','number','min="0"')+field('notes','Notes')},
+        sales:{action:'sale',title:'Sales / VAT Invoice',fields:customer()+product()+qty()+field('rate','Rate (blank = price rule)','number','min="0" step="0.01"')+
+          select('saleType','Sale type','<option value="RETURNABLE">Returnable jar water</option><option value="FILLING">Customer jar filling</option><option value="JAR_SALE">New jar sale</option><option value="STANDARD">Other packaged water</option>')+
+          field('jarTypeId','Jar Type ID (required for returnable)')+field('loadId','Vehicle Load ID (optional)')+field('vehicleId','Vehicle ID (optional)')+
+          field('taxRate','VAT %','number','value="13" min="0" max="100"')+
+          select('taxInclusive','Rate type','<option value="false">VAT exclusive</option><option value="true">VAT inclusive</option>')},
+        returns:{action:'jarReturn',title:'Empty Jar Return',fields:customer()+field('jarTypeId','Jar Type ID','text','required')+qty()},
+        receipts:{action:'receipt',title:'Customer Receipt',fields:customer()+amount()+mode()},
+        expenses:{action:'expense',title:'Expense Voucher',fields:field('description','Expense description','text','required')+field('categoryId','Expense category ID')+amount()+mode()},
+        loads:{action:'vehicleLoad',title:'Vehicle Load',fields:vehicle()+product()+qty()},
+        settlements:{action:'vehicleSettlement',title:'Vehicle Settlement',fields:field('loadId','Load ID','text','required')+
+          field('unsoldQty','Unsold full jars returned','number','required min="0"')+
+          field('emptyJarCollected','Empty jars collected (reference only)','number','min="0"')+
+          field('cashCollected','Cash reported (reconciliation only)','number','min="0"')+
+          field('bankCollected','Bank reported (reconciliation only)','number','min="0"')}
+      };
+      const f=forms[page];
+      if(!f) return;
+      const caution=page==='settlements' ? 'Settlement reconciles invoices; it does not automatically create customer receipts or post empty-jar movements. Record these separately.' :
+        page==='sales' ? 'VAT rate and pricing must be checked. This initial version does not perform stock availability or cost-of-sales posting.' :
+        page==='production' ? 'Production entry does not yet deduct caps, labels or empty jars automatically.' : '';
+      $('view').innerHTML=`<section class="panel"><h2>${f.title}</h2><p class="hint">Entries are written to your existing Google Sheets database. Posted records are not edited here.</p>`+
+        (caution?`<div class="notice">${escapeHtml(caution)}</div>`:'')+
+        `<form id="entryForm"><div class="form-grid">${f.fields}</div><div class="actions"><button class="btn" type="submit">Save transaction</button><button class="btn secondary" type="reset">Clear</button></div></form></section>`;
+      $('entryForm').addEventListener('submit',async event=>{
+        event.preventDefault();
+        const button=event.target.querySelector('button[type="submit"]');
+        const raw=Object.fromEntries(new FormData(event.target).entries());
+        const data=f.sheet?{sheet:f.sheet,record:raw}:raw;
+        if(page==='sales') data.taxInclusive=raw.taxInclusive==='true';
+        button.disabled=true;
+        busy(true, 'Saving and validating transaction…');
+        try {
+          const result=await request(f.action,data);
+          notify('Saved successfully: '+(result.id||result.InvoiceID||result.CustomerID||result.ProductID||result.VehicleID));
+          event.target.reset();
+          if(f.sheet) state.masters=await request('bootstrap');
+        } catch(error) { notify(error.message,true); }
+        finally { busy(false); button.disabled=false; }
+      });
+    }
+
+    async function records() {
+      const sheets=['Sales_Invoices','Production_Daily','Jar_Movements','Receipts','Expenses','Vehicle_Loads','Vehicle_Settlements','Vouchers'];
+      $('view').innerHTML=`<div class="panel"><h2>Transaction Records</h2><div class="form-grid">`+
+        select('recordSheet','Choose table',sheets.map(s=>`<option value="${s}">${s}</option>`).join(''))+
+        `</div><div class="actions"><button class="btn" id="loadRecords">Load Records</button></div><div id="recordResult" class="table-wrap"></div></div>`;
+      $('loadRecords').onclick=async()=>{
+        try { const rows=await withBusy(() => request('list',{sheet:$('f_recordSheet').value}), 'Loading records…'); renderTable($('recordResult'),rows); }
+        catch(error){notify(error.message,true);}
+      };
+    }
+
+    function ledgerForm() {
+      $('view').innerHTML=`<div class="panel"><h2>General Ledger</h2><p class="hint">Posted journal lines only. Opening balances are not included in this preview.</p><div class="form-grid">`+
+        select('accountId','Account',options(masters().accounts,'AccountID','AccountNameEN'))+
+        field('partyId','Customer/Supplier ID (optional)')+
+        `</div><div class="actions"><button class="btn" id="loadLedger">Show Ledger</button></div><div id="ledgerSummary"></div><div id="ledgerResult" class="table-wrap"></div></div>`;
+      $('loadLedger').onclick=async()=>{
+        try {
+          const d=await withBusy(() => request('ledger',{accountId:$('f_accountId').value,partyId:$('f_partyId').value}), 'Loading ledger…');
+          $('ledgerSummary').textContent=`Debit: ${fmt(d.totalDr)} | Credit: ${fmt(d.totalCr)} | Dr-Cr: ${fmt(d.balance)}`;
+          renderTable($('ledgerResult'),d.lines);
+        } catch(error){notify(error.message,true);}
+      };
+    }
+
+    function renderTable(container,rows) {
+      if(!rows.length) {container.innerHTML='<p class="hint">No records found.</p>';return;}
+      const keys=Object.keys(rows[0]);
+      container.innerHTML='<table><thead><tr>'+keys.map(k=>`<th>${escapeHtml(k)}</th>`).join('')+
+        '</tr></thead><tbody>'+rows.map(row=>'<tr>'+keys.map(k=>`<td>${escapeHtml(row[k])}</td>`).join('')+'</tr>').join('')+'</tbody></table>';
+    }
+
+    }
   </script>
 </body>
 </html>
