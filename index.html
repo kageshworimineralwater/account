@@ -2882,32 +2882,82 @@ module.exports = QRCode;
         $('essScanIn').onclick=()=>erpScanAttendance('IN');$('essScanOut').onclick=()=>erpScanAttendance('OUT');
       }catch(e){notify(e.message,true);}
     }
-    async function erpScanAttendance(mode){
-      if(!navigator.mediaDevices?.getUserMedia||!navigator.geolocation){notify('Camera/GPS unavailable. Use HTTPS and a supported mobile browser.',true);return;}
-      const modal=document.createElement('div');modal.className='modal-overlay';modal.style.zIndex='9900';
-      modal.innerHTML=`<div class="modal-card" style="max-width:460px"><h2>QR ${mode==='IN'?'हाजिरी सुरु':'हाजिरी समाप्त'}</h2><video id="erpCamera" autoplay playsinline muted style="width:100%;max-height:320px;background:#152439;border-radius:12px"></video><p id="erpCameraStatus">Camera सुरु हुँदैछ...</p><button class="btn secondary" id="erpCameraCancel">रद्द</button></div>`;
-      document.body.appendChild(modal);let stream,detector,active=true;
-      const close=()=>{active=false;if(stream)stream.getTracks().forEach(t=>t.stop());modal.remove();};modal.querySelector('#erpCameraCancel').onclick=close;
+    // Attendance security: location is verified before camera permission is requested.
+    // A fresh GPS fix is checked again by the server when the QR is submitted.
+    let erpAttendanceScanning = false;
+    async function erpAttendancePosition(){
+      if(!navigator.geolocation)throw Error('यो मोबाइलमा GPS उपलब्ध छैन।');
       try{
-        if(!('BarcodeDetector' in window))throw Error('यो Browser मा QR Scanner उपलब्ध छैन । Chrome/Android जस्ता BarcodeDetector समर्थित Browser प्रयोग गर्नुहोस् ।');
+        return await new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,reject,
+          {enableHighAccuracy:true,timeout:20000,maximumAge:0}));
+      }catch(e){
+        if(e.code===1)throw Error('हाजिरीका लागि Location Permission दिनुहोस्।');
+        if(e.code===2)throw Error('GPS Location भेटिएन। मोबाइलको Location सक्रिय गरेर पुनः प्रयास गर्नुहोस्।');
+        if(e.code===3)throw Error('GPS जाँचमा धेरै समय लाग्यो। खुला ठाउँमा पुनः प्रयास गर्नुहोस्।');
+        throw Error('Location जाँच गर्न सकिएन। पुनः प्रयास गर्नुहोस्।');
+      }
+    }
+    async function erpScanAttendance(mode){
+      if(erpAttendanceScanning)return;
+      if(!navigator.mediaDevices?.getUserMedia||!navigator.geolocation){notify('Camera/GPS उपलब्ध छैन। HTTPS र समर्थित मोबाइल Browser प्रयोग गर्नुहोस्।',true);return;}
+      erpAttendanceScanning=true;
+      const scanButton=$(mode==='IN'?'essScanIn':'essScanOut');
+      if(scanButton)scanButton.disabled=true;
+      const modal=document.createElement('div');modal.className='modal-overlay';modal.style.zIndex='9900';
+      modal.innerHTML=`<div class="modal-card" style="max-width:460px"><h2>QR ${mode==='IN'?'हाजिरी सुरु':'हाजिरी समाप्त'}</h2><p id="erpCameraStatus" role="status" aria-live="polite">📍 तपाईंको Location जाँच हुँदैछ...</p><video id="erpCamera" autoplay playsinline muted hidden style="width:100%;max-height:320px;background:#152439;border-radius:12px"></video><button class="btn secondary" id="erpCameraCancel">रद्द</button></div>`;
+      document.body.appendChild(modal);
+      let stream=null,active=true,processing=false,detector=null;
+      const status=message=>{const el=modal.querySelector('#erpCameraStatus');if(el)el.textContent=message;};
+      const close=()=>{
+        active=false;erpAttendanceScanning=false;
+        if(stream)stream.getTracks().forEach(track=>track.stop());
+        if(scanButton&&scanButton.isConnected)scanButton.disabled=false;
+        modal.remove();
+      };
+      modal.querySelector('#erpCameraCancel').onclick=close;
+      try{
+        if(!('BarcodeDetector' in window))throw Error('यो Browser मा QR Scanner उपलब्ध छैन। QR Scanner समर्थित Chrome/Android Browser प्रयोग गर्नुहोस्।');
         detector=new BarcodeDetector({formats:['qr_code']});
+        const firstPosition=await erpAttendancePosition();
+        if(!active)return;
+        const verified=await request('attendanceLocationCheck',{
+          latitude:firstPosition.coords.latitude,longitude:firstPosition.coords.longitude,
+          accuracy:firstPosition.coords.accuracy
+        });
+        if(!active)return;
+        if(!verified||verified.allowed!==true)throw Error(verified?.message||'कार्यालयको तोकिएको क्षेत्रमा Location प्रमाणित भएन।');
+        status('✓ Location प्रमाणित भयो। QR Scanner खुल्दैछ...');
+        // Camera is requested only after server-side geofence approval.
         stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});
-        const video=modal.querySelector('#erpCamera');video.srcObject=stream;await video.play();
+        if(!active){stream.getTracks().forEach(track=>track.stop());return;}
+        const video=modal.querySelector('#erpCamera');video.hidden=false;video.srcObject=stream;
+        await video.play();status('कम्पनीको QR Code क्यामेरामा देखाउनुहोस्...');
         const tick=async()=>{
-          if(!active)return;
+          if(!active||processing)return;
           try{
-            const codes=await detector.detect(video);if(codes.length){
-              active=false;modal.querySelector('#erpCameraStatus').textContent='Location प्रमाणित हुँदैछ...';
+            const codes=await detector.detect(video);
+            if(codes.length){
+              processing=true;
               const qr=String(codes[0].rawValue||'');
-              if(!qr.startsWith('KAGESHWORI-ATTENDANCE:'))throw Error('कम्पनीको QR Code होइन ।');
-              const position=await new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,reject,{enableHighAccuracy:true,timeout:20000,maximumAge:0}));
-              const result=await request('attendanceScan',{mode,qr:qr.slice('KAGESHWORI-ATTENDANCE:'.length),latitude:position.coords.latitude,longitude:position.coords.longitude,accuracy:position.coords.accuracy});
-              close();await notify(mode==='IN'?'हाजिरी सुरु सफल भयो ।':'हाजिरी समाप्त सफल भयो ।');erpEssPage();return;
+              if(!qr.startsWith('KAGESHWORI-ATTENDANCE:')){
+                status('यो कम्पनीको QR होइन। सही QR Code Scan गर्नुहोस्।');
+                processing=false;
+              }else{
+                status('QR भेटियो। अन्तिम Location र हाजिरी प्रमाणित हुँदैछ...');
+                const position=await erpAttendancePosition();
+                if(!active)return;
+                await request('attendanceScan',{mode,qr:qr.slice('KAGESHWORI-ATTENDANCE:'.length),
+                  latitude:position.coords.latitude,longitude:position.coords.longitude,accuracy:position.coords.accuracy});
+                if(!active)return;
+                close();notify(mode==='IN'?'हाजिरी सुरु सफल भयो।':'हाजिरी समाप्त सफल भयो।');
+                erpEssPage();return;
+              }
             }
           }catch(err){close();notify(err.message,true);return;}
           if(active)setTimeout(tick,350);
-        };tick();
-      }catch(err){close();notify(err.message,true);}
+        };
+        tick();
+      }catch(err){if(active){close();notify(err.message,true);}}
     }
     // Super Admin: manage the attendance geofence without code edits or redeployment.
     // Secure in-browser QR generation: no QR secret leaves this page for an external generator.
