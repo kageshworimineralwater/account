@@ -412,7 +412,7 @@
       ['auditReport', '◷ अडिट रिपोर्ट'],
       ['employees', '♙ कर्मचारी व्यवस्थापन'], ['payroll','▤ Payroll'], ['attendanceAdmin','◷ Attendance'], ['shareholders','♧ Shareholders'], ['ess','♙ मेरो विवरण'], ['shareholder','▦ Shareholder Reports']
     ];
-    const state = { token: '', role: '', permissions: [], ready: false, current: 'dashboard', masters: null, pending: new Map(), seq: 0 };
+    const state = { token: '', role: '', permissions: [], ready: false, current: 'dashboard', masters: null, pending: new Map(), seq: 0, financeGate: null };
     const $ = id => document.getElementById(id);
     // Enterprise idle protection: warning at 14 minutes; lock at 15.
     // Server also enforces the 15-minute idle and 6-hour absolute limits.
@@ -663,12 +663,16 @@
         resetIdleTracking();
         state.role = data.role;
         state.permissions = data.permissions || [];
+        state.financeGate = await request('financeGate');
         renderNavigation();
         $('password').value = '';
         state.masters = ['Employee','Shareholder'].includes(state.role) ? null : await request('bootstrap');
         $('loginScreen').classList.add('hide');
         $('app').classList.remove('hide');
-        navigate(state.role==='Employee'?'ess':state.role==='Shareholder'?'shareholder':(state.permissions.includes('dashboard')?'dashboard':(state.permissions[0] || 'userAccess')));
+        if(state.financeGate&&!state.financeGate.canPost){
+          if(state.role==='Super Admin') navigate('financialYears');
+          else {navigate(state.role==='Employee'?'ess':state.role==='Shareholder'?'shareholder':'dashboard');notify(state.financeGate.message,true);}
+        } else navigate(state.role==='Employee'?'ess':state.role==='Shareholder'?'shareholder':(state.permissions.includes('dashboard')?'dashboard':(state.permissions[0] || 'userAccess')));
       } catch (error) { await notify(error.message, true); }
       finally { busy(false); $('loginButton').disabled = false; }
     });
@@ -856,6 +860,13 @@
     }
 
     function navigate(page) {
+      const safePages=['financialYears','dayBook','trialBalance','ledger','records','auditReport','userAccess','companyLocations','dashboard','shareholder','ess'];
+      if(state.financeGate&&!state.financeGate.canPost&&!safePages.includes(page)){
+        $('notice').classList.add('hide');
+        notify(state.financeGate.message,true);
+        if(state.role==='Super Admin'&&page!=='financialYears')return navigate('financialYears');
+        return;
+      }
       if (['userAccess','auditReport','shareholders','companyLocations'].includes(page) && state.role !== 'Super Admin') return;
       if(page==='ess' && state.role!=='Employee')return;
       if(page==='shareholder' && state.role!=='Shareholder')return;
@@ -1450,7 +1461,7 @@
       $('view').innerHTML = `<section class="panel"><h2>Journal Voucher Entry</h2>
         <p class="hint">Balanced double-entry posting. Posted vouchers cannot be edited here.</p>
         <div class="account-note">Post only verified transactions. For sales and customer receipts, use the dedicated Sales and Receipts modules to prevent duplicate entries.</div>
-        <form id="journalVoucherForm">
+        <form id="journalVoucherForm"><div class="form-grid"><label>Voucher Date (AD)<input type="date" name="voucherDate" id="journalVoucherDate" required></label><label>Financial Year <select name="financialYearId" id="journalVoucherFY" required></select></label></div>
           <label for="voucherNarration">Narration / Transaction details</label>
           <textarea id="voucherNarration" name="narration" rows="2" required></textarea>
           <div id="voucherLines" style="margin-top:20px"></div>
@@ -1487,6 +1498,12 @@
         $('voucherDifference').textContent = fmt(dr-cr);
       };
       line();line();updateTotals();
+      $('journalVoucherDate').value=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kathmandu',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+      request('financeYears').then(ys=>{
+        $('journalVoucherFY').innerHTML=ys.filter(y=>y.Status==='Open').map(y=>`<option value="${escapeHtml(y.FinancialYearID)}">${escapeHtml(y.YearLabelBS)}</option>`).join('');
+        const sync=()=>{const date=$('journalVoucherDate').value;const match=ys.find(y=>y.Status==='Open'&&date>=y.StartAD&&date<=y.EndAD);if(match)$('journalVoucherFY').value=match.FinancialYearID;};
+        $('journalVoucherDate').onchange=sync;sync();
+      }).catch(e=>notify(e.message,true));
       $('voucherAddLine').onclick = () => { if ($('voucherLines').children.length < 30) line(); };
       $('journalVoucherForm').onsubmit = async event => {
         event.preventDefault();
@@ -1498,7 +1515,7 @@
         $('voucherPostButton').disabled = true;
         try {
           const result = await withBusy(() => request('postJournalVoucher', {
-            narration:$('voucherNarration').value,lines:lines}), 'Posting journal voucher…');
+            narration:$('voucherNarration').value,lines:lines,voucherDate:$('journalVoucherDate').value,financialYearId:$('journalVoucherFY').value}), 'Posting journal voucher…');
           await notify('Voucher posted: ' + result.id);
           voucherEntry();
         } catch(error) { notify(error.message,true); }
@@ -1537,7 +1554,23 @@
       $('view').innerHTML=`<section class="panel"><h2>Financial Year / आर्थिक वर्ष</h2><p class="hint">नेपालको आर्थिक वर्ष साउन १ देखि अर्को असार मसान्तसम्म। वास्तविक BS पात्रोबाट प्रमाणित AD मिति प्रविष्ट गर्नुहोस्। कुनै मिति अनुमान गरेर स्वतः भर्न हुँदैन।</p><div id="fyRows"></div>${state.role==='Super Admin'?`<form id="fyForm"><div class="form-grid"><label>FY (BS) <input name="yearLabelBS" placeholder="2083/84" required pattern="20[0-9]{2}/[0-9]{2}"></label><label>Start AD (BS साउन १) <input name="startAD" type="date" required></label><label>End AD (BS असार मसान्त) <input name="endAD" type="date" required></label></div><button class="btn" type="submit">Create Financial Year</button></form>`:''}</section>`;
       const load=async()=>{$('fyRows').innerHTML=accountingTable(await request('financeYears'),[['YearLabelBS','BS Year'],['StartAD','Start AD'],['EndAD','End AD'],['Status','Status']]);};
       await load();
-      if($('fyForm'))$('fyForm').onsubmit=async ev=>{ev.preventDefault();const b=ev.target.querySelector('[type=submit]');b.disabled=true;try{await request('financeYearSave',Object.fromEntries(new FormData(ev.target).entries()));notify('Financial year created.');ev.target.reset();await load();}catch(e){notify(e.message,true);}finally{b.disabled=false;}};
+      if(state.role==='Super Admin'){
+        $('fyRows').insertAdjacentHTML('beforeend',`<details style="margin:14px 0"><summary><strong>Import Verified Opening Balances (one-time)</strong></summary><p class="hint">Only for a FY with no posted vouchers. Use certified balances; debit and credit must match. Existing customer/supplier subledger balances require separate reconciliation.</p><label>Financial Year <select id="openingFY"></select></label><div id="openingLines"></div><div class="actions"><button class="btn secondary" id="openingAdd">+ Add Ledger Line</button><button class="btn" id="openingPost">Post Opening Balances</button></div></details>`);
+        const years=await request('financeYears');
+        $('openingFY').innerHTML=years.filter(y=>y.Status==='Open').map(y=>`<option value="${escapeHtml(y.FinancialYearID)}">${escapeHtml(y.YearLabelBS)}</option>`).join('');
+        const acc=(await request('chartOfAccounts')).filter(a=>a.Status==='Active');
+        const addLine=()=>{$('openingLines').insertAdjacentHTML('beforeend',`<div class="form-grid opening-line" style="margin:8px 0"><label>Ledger <select class="op-account">${acc.map(a=>`<option value="${escapeHtml(a.AccountID)}">${escapeHtml(a.AccountCode)} — ${escapeHtml(a.AccountNameEN)}</option>`).join('')}</select></label><label>Debit <input class="op-debit" type="number" min="0" step="0.01" value="0"></label><label>Credit <input class="op-credit" type="number" min="0" step="0.01" value="0"></label><button type="button" class="btn secondary op-remove">Remove</button></div>`);};
+        $('openingAdd').onclick=addLine;addLine();addLine();
+        $('openingLines').onclick=e=>{if(e.target.closest('.op-remove'))e.target.closest('.opening-line').remove();};
+        $('openingPost').onclick=async()=>{const lines=[...document.querySelectorAll('.opening-line')].map(r=>({account:r.querySelector('.op-account').value,debit:r.querySelector('.op-debit').value,credit:r.querySelector('.op-credit').value}));if(!confirm('Verify audited opening balances and post once? This cannot be edited here.'))return;try{const v=await request('financeOpeningPost',{financialYearId:$('openingFY').value,lines});notify('Opening balance posted: '+v.id);}catch(e){notify(e.message,true);}};
+      }
+      if(state.role==='Super Admin'){
+        $('fyRows').insertAdjacentHTML('afterend',`<div class="account-note" style="margin:14px 0"><strong>Year Status Control</strong><div class="form-grid"><label>Financial Year <select id="fyStatusId"></select></label><label>Status <select id="fyNewStatus"><option value="Open">Open</option><option value="Locked">Locked</option><option value="Closed">Closed</option></select></label><label>Reason / Audit reference <input id="fyReason" placeholder="Reason for closing/reopening"></label></div><button class="btn secondary" id="fyStatusSave">Update Year Status</button></div>`);
+        const statusLoad=async()=>{const ys=await request('financeYears');$('fyStatusId').innerHTML=ys.map(y=>`<option value="${escapeHtml(y.FinancialYearID)}">${escapeHtml(y.YearLabelBS)} (${escapeHtml(y.Status)})</option>`).join('');};
+        await statusLoad();
+        $('fyStatusSave').onclick=async()=>{try{await request('financeYearStatus',{financialYearId:$('fyStatusId').value,status:$('fyNewStatus').value,reason:$('fyReason').value});state.financeGate=await request('financeGate');await load();await statusLoad();notify('Financial year status updated.');}catch(e){notify(e.message,true);}};
+      }
+      if($('fyForm'))$('fyForm').onsubmit=async ev=>{ev.preventDefault();const b=ev.target.querySelector('[type=submit]');b.disabled=true;try{await request('financeYearSave',Object.fromEntries(new FormData(ev.target).entries()));state.financeGate=await request('financeGate');notify('Financial year created.');ev.target.reset();await load();if($('fyStatusId')){$('fyStatusId').innerHTML=(await request('financeYears')).map(y=>`<option value="${escapeHtml(y.FinancialYearID)}">${escapeHtml(y.YearLabelBS)} (${escapeHtml(y.Status)})</option>`).join('');}}catch(e){notify(e.message,true);}finally{b.disabled=false;}};
     }
     async function expenseCategoriesPage(){
       $('view').innerHTML=`<section class="panel"><h2>Expense Category Master</h2><p class="hint">Create a category once; select it on every voucher. Category code is automatic.</p><div id="catRows"></div><button class="btn" id="catAdd">+ Add Expense Category</button></section>`;
