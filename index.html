@@ -266,6 +266,18 @@
       .account-note { font-size:10px; }
     }
 
+    /* Module-based navigation: grouped menus, same original page routes. */
+    .nav-group { margin: 4px 0; }
+    .nav-group-toggle { width:100%; display:flex; justify-content:space-between; align-items:center;
+      background:transparent; color:#c7dbef; border:0; border-radius:10px; padding:12px 13px;
+      text-align:left; font-weight:700; font-size:12px; cursor:pointer; }
+    .nav-group-toggle:hover, .nav-group-toggle[aria-expanded="true"] { background:#ffffff16; color:#fff; }
+    .nav-group-items { padding:2px 0 6px 10px; }
+    .nav-group-items .nav { padding:10px 12px; margin:1px 0; font-size:12px; }
+    .profile-access { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+    @media(max-width:640px) { #navigation { display:block; max-height:55vh; overflow-y:auto; }
+      .nav-group-items { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .nav-group-items .nav { white-space:normal; } }
     /* Enterprise master workspace: list + accessible right-side entry drawer. */
     .master-head {display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px}
     .master-head h2 {margin:0 0 5px}
@@ -719,20 +731,44 @@
       $('loginScreen').classList.remove('hide');
     });
 
+    const moduleGroups = [
+      ['📊 Dashboard',['dashboard']],
+      ['🛒 Sales & Customers',['customers','sales','returns','receipts','customerAccounts']],
+      ['🏭 Production & Inventory',['production','products','vehicles','loads','settlements']],
+      ['👥 Human Resources',['employees','attendanceAdmin','ess']],
+      ['💵 Payroll',['payroll']],
+      ['📈 Shareholders',['shareholders','shareholder']],
+      ['📒 Finance & Accounting',['expenses','ledger','chartAccounts','voucherEntry','trialBalance','records']],
+      ['⚙ Administration',['userAccess','companyLocations','auditReport']]
+    ];
+    const navExpanded = new Set(['📊 Dashboard','👥 Human Resources']);
+    function canOpenPage(id) {
+      if (['userAccess','auditReport','shareholders','companyLocations'].includes(id)) return state.role === 'Super Admin';
+      if (id==='ess') return state.role==='Employee';
+      if (id==='shareholder') return state.role==='Shareholder';
+      if (['payroll','attendanceAdmin'].includes(id)) return state.role==='Super Admin'||state.permissions.includes('employees');
+      if (id==='customerAccounts') return state.permissions.includes('customers');
+      if (['chartAccounts','voucherEntry','trialBalance'].includes(id)) return state.permissions.includes('ledger');
+      return state.permissions.includes(id);
+    }
     function renderNavigation() {
-      $('navigation').innerHTML = pages.filter(([id]) =>
-        (id === 'userAccess' || id === 'auditReport' || id === 'shareholders' || id === 'companyLocations') ? state.role === 'Super Admin' :
-        id === 'ess' ? state.role === 'Employee' :
-        id === 'shareholder' ? state.role === 'Shareholder' :
-        ['payroll','attendanceAdmin'].includes(id) ? (state.role==='Super Admin'||state.permissions.includes('employees')) :
-        ['customerAccounts'].includes(id) ? state.permissions.includes('customers') :
-        ['chartAccounts','voucherEntry','trialBalance'].includes(id) ? state.permissions.includes('ledger') :
-        state.permissions.includes(id)).map(([id,title]) =>
-        `<button class="nav" data-page="${id}">${title}</button>`).join('');
+      const titles=Object.fromEntries(pages);
+      $('navigation').innerHTML=moduleGroups.map(([group,ids])=>{
+        const visible=ids.filter(canOpenPage);
+        if(!visible.length)return '';
+        const expanded=navExpanded.has(group)||visible.includes(state.current);
+        return `<div class="nav-group"><button type="button" class="nav-group-toggle" data-group="${escapeHtml(group)}" aria-expanded="${expanded}"><span>${escapeHtml(group)}</span><span>${expanded?'−':'+'}</span></button><div class="nav-group-items ${expanded?'':'hide'}">${visible.map(id=>`<button class="nav ${state.current===id?'active':''}" data-page="${id}">${escapeHtml(titles[id]||id)}</button>`).join('')}</div></div>`;
+      }).join('');
     }
     $('navigation').addEventListener('click', event => {
       const button = event.target.closest('[data-page]');
       if (button) navigate(button.dataset.page);
+      const groupButton = event.target.closest('[data-group]');
+      if (groupButton) {
+        const group=groupButton.dataset.group;
+        if(navExpanded.has(group)) navExpanded.delete(group); else navExpanded.add(group);
+        renderNavigation();
+      }
     });
 
     function navigate(page) {
@@ -744,6 +780,7 @@
           !(['chartAccounts','voucherEntry','trialBalance'].includes(page) && state.permissions.includes('ledger'))) return;
       if(['payroll','attendanceAdmin'].includes(page)&&state.role!=='Super Admin'&&!state.permissions.includes('employees'))return;
       state.current = page;
+      renderNavigation();
       $('pageTitle').textContent = pages.find(p => p[0] === page)?.[1] || page;
       document.querySelectorAll('.nav').forEach(button =>
         button.classList.toggle('active',button.dataset.page === page));
@@ -790,6 +827,43 @@
         $('auditPrint').onclick=()=>window.print();
         draw();
       } catch(err) {notify(err.message,true);}
+    }
+
+    // Create/manage portal login from the existing master profile, without re-entering profile data.
+    async function profileLoginAccess(role, profile) {
+      if(state.role!=='Super Admin') return notify('Login access requires Super Admin.',true);
+      try {
+        const result=await withBusy(()=>request('manageUsers',{command:'list'}),'Login account खोज्दै...');
+        const id=role==='Employee'?profile.EmployeeID:profile.ShareholderID;
+        const account=result.users.find(u=>u.role===role && u.linkedId===id);
+        if(account){
+          const action=await openModal(`${profile.FullName} (${id}) को Login: ${account.username} / ${account.status}. ${account.status==='Active'?'Deactivate':'Activate'} गर्ने?`, 'confirm', {title:'Manage '+role+' Login'});
+          if(!action)return;
+          await withBusy(()=>request('manageUsers',{command:'status',username:account.username,status:account.status==='Active'?'Inactive':'Active'}),'Login status परिवर्तन हुँदैछ...');
+          notify('Login status updated.');
+          if(role==='Employee') employeeWorkspace(); else erpShareholdersPage();
+          return;
+        }
+        if(String(profile.Status).toLowerCase()!=='active')throw Error('Inactive profile लाई Login दिन मिल्दैन ।');
+        const modal=document.createElement('div');modal.className='modal-overlay';modal.id='profileLoginOverlay';
+        modal.innerHTML=`<div class="modal-card" style="width:min(480px,96vw);text-align:left;max-height:90vh;overflow:auto">
+          <h2>${role} Login Access</h2><p class="hint">${escapeHtml(profile.FullName)} · ${escapeHtml(id)} — Profile बाट स्वतः जोडिएको ।</p>
+          <form id="profileLoginForm" class="form-grid" style="grid-template-columns:1fr">
+            <label>Username<input name="username" required autocomplete="off"></label>
+            <label>Recovery Email<input name="email" type="email" required></label>
+            <label>Mobile<input name="mobile" inputmode="numeric" pattern="[0-9]{10}" value="${escapeHtml(profile.Mobile||'')}"></label>
+            <label>Initial Password<input name="password" type="password" minlength="8" required autocomplete="new-password"></label>
+            <p class="hint">Role: ${role} · Linked ID: ${escapeHtml(id)} (automatic)</p>
+            <div class="actions"><button class="btn" type="submit">Create Login</button><button class="btn secondary" type="button" id="profileLoginCancel">Cancel</button></div>
+          </form></div>`;
+        document.body.appendChild(modal);
+        modal.querySelector('#profileLoginCancel').onclick=()=>modal.remove();
+        modal.querySelector('form').onsubmit=async ev=>{
+          ev.preventDefault();const f=ev.currentTarget;const d=Object.fromEntries(new FormData(f));
+          try{await withBusy(()=>request('manageUsers',{command:'create',...d,role,linkedId:id}),'Login बनाउँदै...');modal.remove();notify('Login created for '+profile.FullName);if(role==='Employee')employeeWorkspace();else erpShareholdersPage();}
+          catch(e){notify(e.message,true);}
+        };
+      }catch(err){notify(err.message,true);}
     }
 
     async function userAccess() {
@@ -1142,7 +1216,7 @@
           <tbody>${matches.map(r=>`<tr><td>${escapeHtml(r.EmployeeID)}</td>
           <td>${escapeHtml(r.FullName)}</td><td>${escapeHtml(r.Designation)}</td>
           <td>${escapeHtml(r.Mobile || '—')}</td><td>${escapeHtml(r.SalaryType)}</td>
-          <td>${fmt(r.BaseSalary)}</td><td><button class="master-row-action" data-edit-employee="${escapeHtml(r.EmployeeID)}">Edit</button></td></tr>`).join('') ||
+          <td>${fmt(r.BaseSalary)}</td><td class="profile-access"><button class="master-row-action" data-edit-employee="${escapeHtml(r.EmployeeID)}">Edit</button>${state.role==='Super Admin'?`<button class="btn secondary" type="button" data-access-employee="${escapeHtml(r.EmployeeID)}">Login Access</button>`:''}</td></tr>`).join('') ||
           '<tr><td colspan="7">कर्मचारीको विवरण भेटिएन ।</td></tr>'}</tbody></table>`;
       };
       const reload = async () => {
@@ -1150,6 +1224,11 @@
         draw();
       };
       $('employeeSearch').addEventListener('input',draw);
+      $('employeeRows').addEventListener('click',ev=>{
+        const b=ev.target.closest('[data-access-employee]');if(!b)return;
+        const profile=employees.find(e=>e.EmployeeID===b.dataset.accessEmployee);
+        if(profile)profileLoginAccess('Employee',profile);
+      });
       $('employeeRows').addEventListener('click',async ev=>{const b=ev.target.closest('[data-edit-employee]');if(!b)return;const e=employees.find(x=>x.EmployeeID===b.dataset.editEmployee);if(!e)return;const changes={};
         for(const [k,label] of [['FullName','Employee name'],['Mobile','Mobile'],['Designation','Designation'],['BaseSalary','Base salary'],['Address','Address']]){const v=prompt(label,String(e[k]||''));if(v===null)return;changes[k]=v;}
         changes.Status=confirm('Keep employee Active? Cancel = Inactive')?'Active':'Inactive';
@@ -1429,7 +1508,11 @@
       }catch(err){notify(err.message,true);}
     }
     async function erpShareholdersPage(){
-      try{const rows=await request('shareholderList');$('view').innerHTML=`<section class="panel"><h2>Shareholder Directory</h2><form id="shrCreate" class="form-grid"><label>Full Name<input name="fullName" required></label><label>Mobile<input name="mobile"></label><div><button class="btn">Create Shareholder</button></div></form></section><section class="panel">${erpTbl(rows,[['ShareholderID','Shareholder ID'],['FullName','Name'],['Mobile','Mobile'],['Status','Status']])}</section>`;
+      try{const rows=await request('shareholderList');$('view').innerHTML=`<section class="panel"><h2>Shareholder Directory</h2><form id="shrCreate" class="form-grid"><label>Full Name<input name="fullName" required></label><label>Mobile<input name="mobile"></label><div><button class="btn">Create Shareholder</button></div></form></section><section class="panel">${erpTbl(rows,[['ShareholderID','Shareholder ID'],['FullName','Name'],['Mobile','Mobile'],['Status','Status']])}<h3>Portal Login Access</h3><p class="hint">पहिले नै दर्ता भएका Shareholder बाट Login दिनुहोस् । नयाँ Profile दोहोर्याउनु पर्दैन ।</p><div class="profile-access">${rows.map(r=>`<button type="button" class="btn secondary" data-access-shareholder="${erpEsc(r.ShareholderID)}">${erpEsc(r.FullName)} · Login Access</button>`).join('')}</div></section>`;
+        $('view').querySelectorAll('[data-access-shareholder]').forEach(btn=>btn.onclick=()=>{
+          const profile=rows.find(r=>r.ShareholderID===btn.dataset.accessShareholder);
+          if(profile)profileLoginAccess('Shareholder',profile);
+        });
         $('shrCreate').onsubmit=async ev=>{ev.preventDefault();const f=ev.currentTarget;try{const d=Object.fromEntries(new FormData(f));const r=await request('shareholderSave',d);await notify('Shareholder created: '+r.ShareholderID);erpShareholdersPage();}catch(e){notify(e.message,true);}};
       }catch(e){notify(e.message,true);}
     }
