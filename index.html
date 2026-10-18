@@ -406,7 +406,7 @@
       ['customerAccounts', '◉ Customer Accounts'],
       ['chartAccounts', '▤ Chart of Accounts'],
       ['voucherEntry', '✚ Journal Voucher'],
-      ['trialBalance', '⚖ Trial Balance / Result'],
+      ['trialBalance', '⚖ Trial Balance / Result'], ['financialYears','◷ Financial Years'], ['dayBook','▤ Day Book'], ['expenseCategories','▦ Expense Categories'],
       ['userAccess', '♙ User Access'],
       ['companyLocations', '⌖ Company Locations'],
       ['auditReport', '◷ अडिट रिपोर्ट'],
@@ -797,7 +797,7 @@
       ['👥 Human Resources',['employees','attendanceAdmin','ess']],
       ['💵 Payroll',['payroll']],
       ['📈 Shareholders',['shareholders','shareholder']],
-      ['📒 Finance & Accounting',['expenses','ledger','chartAccounts','voucherEntry','trialBalance','records']],
+      ['📒 Finance & Accounting',['expenses','ledger','chartAccounts','voucherEntry','trialBalance','financialYears','dayBook','expenseCategories','records']],
       ['⚙ Administration',['userAccess','companyLocations','auditReport']]
     ];
     const navExpanded = new Set(['📊 Dashboard','👥 Human Resources']);
@@ -807,7 +807,7 @@
       if (id==='shareholder') return state.role==='Shareholder';
       if (['payroll','attendanceAdmin'].includes(id)) return state.role==='Super Admin'||state.permissions.includes('employees');
       if (id==='customerAccounts') return state.permissions.includes('customers');
-      if (['chartAccounts','voucherEntry','trialBalance'].includes(id)) return state.permissions.includes('ledger');
+      if (['chartAccounts','voucherEntry','trialBalance','financialYears','dayBook','expenseCategories'].includes(id)) return state.permissions.includes('ledger');
       return state.permissions.includes(id);
     }
     function renderNavigation() {
@@ -838,7 +838,7 @@
       returns:'खाली जार फिर्ता', receipts:'ग्राहकबाट रकम प्राप्ति', expenses:'खर्च व्यवस्थापन',
       loads:'सवारी लोड विवरण', settlements:'सवारी हिसाब मिलान', ledger:'लेजर',
       records:'कारोबार अभिलेख', customerAccounts:'ग्राहक खाता', chartAccounts:'Chart of Accounts',
-      voucherEntry:'Journal Voucher', trialBalance:'Trial Balance / Result',
+      voucherEntry:'Journal Voucher', trialBalance:'Trial Balance / Result', financialYears:'आर्थिक वर्ष व्यवस्थापन', dayBook:'डे बुक', expenseCategories:'खर्च शीर्षक व्यवस्थापन',
       userAccess:'प्रयोगकर्ता पहुँच व्यवस्थापन', companyLocations:'कम्पनी लोकेसन',
       auditReport:'अडिट रिपोर्ट', employees:'कर्मचारी व्यवस्थापन', payroll:'तलब व्यवस्थापन',
       attendanceAdmin:'हाजिरी विवरण', shareholders:'सेयरधनी व्यवस्थापन',
@@ -861,7 +861,7 @@
       if(page==='shareholder' && state.role!=='Shareholder')return;
       if (!['userAccess','auditReport','shareholders','companyLocations','ess','shareholder','payroll','attendanceAdmin'].includes(page) && !state.permissions.includes(page) &&
           !(page === 'customerAccounts' && state.permissions.includes('customers')) &&
-          !(['chartAccounts','voucherEntry','trialBalance'].includes(page) && state.permissions.includes('ledger'))) return;
+          !(['chartAccounts','voucherEntry','trialBalance','financialYears','dayBook','expenseCategories'].includes(page) && state.permissions.includes('ledger'))) return;
       if(['payroll','attendanceAdmin'].includes(page)&&state.role!=='Super Admin'&&!state.permissions.includes('employees'))return;
       state.current = page;
       renderNavigation();
@@ -884,9 +884,13 @@
       if (page === 'chartAccounts') return chartAccounts();
       if (page === 'voucherEntry') return voucherEntry();
       if (page === 'trialBalance') return trialBalance();
+      if (page === 'financialYears') return financialYearsPage();
+      if (page === 'dayBook') return dayBookPage();
+      if (page === 'expenseCategories') return expenseCategoriesPage();
       if (page === 'customers') return customerWorkspace();
       if (page === 'records') return records();
       if (page === 'ledger') return ledgerForm();
+      if (page === 'expenses') return expenseEntryPage();
       renderForm(page);
     }
 
@@ -918,7 +922,7 @@
     function erpFormModal(title, fields, submitLabel='Save Changes') {
       return new Promise(resolve => {
         const overlay=document.createElement('div');overlay.className='modal-overlay';overlay.style.zIndex='5100';
-        const inputs=fields.map(f=>`<label>${escapeHtml(f.label)}${f.required?' *':''}${f.options?`<select name="${f.key}">${f.options.map(v=>`<option value="${escapeHtml(v)}" ${v===f.value?'selected':''}>${escapeHtml(v)}</option>`).join('')}</select>`:`<input name="${f.key}" type="${f.type||'text'}" value="${escapeHtml(String(f.value??''))}" ${f.required?'required':''} ${f.type==='number'?'min="0" step="0.01"':''}>`}</label>`).join('');
+        const inputs=fields.map(f=>`<label>${escapeHtml(f.label)}${f.required?' *':''}${f.options?`<select name="${f.key}">${f.options.map(v=>{const value=typeof v==='object'?v.value:v;const label=typeof v==='object'?v.label:v;return `<option value="${escapeHtml(value)}" ${value===f.value?'selected':''}>${escapeHtml(label)}</option>`;}).join('')}</select>`:`<input name="${f.key}" type="${f.type||'text'}" value="${escapeHtml(String(f.value??''))}" ${f.required?'required':''} ${f.type==='number'?'min="0" step="0.01"':''}>`}</label>`).join('');
         overlay.innerHTML=`<div class="modal-card" style="width:min(650px,96vw);max-height:90vh;overflow:auto;text-align:left"><h2>${escapeHtml(title)}</h2><form class="form-grid">${inputs}<div style="display:flex;justify-content:flex-end;gap:10px;grid-column:1/-1"><button type="button" class="btn secondary" data-cancel>Cancel</button><button type="submit" class="btn">${escapeHtml(submitLabel)}</button></div></form></div>`;
         document.body.appendChild(overlay);
         const finish=v=>{overlay.remove();resolve(v)};
@@ -1420,7 +1424,7 @@
       $('newLedgerButton').onclick = () => {
         $('view').insertAdjacentHTML('afterbegin',`<section class="panel print-hide" id="newLedgerPanel">
           <h2>Create Ledger Account</h2><form id="ledgerCreateForm"><div class="form-grid">
-          ${field('accountCode','Account code','text','required')}
+          <div class="account-note">Account Code is generated automatically when saved.</div>
           ${field('accountName','Ledger name (English)','text','required')}
           ${field('accountNameNE','Ledger name (Nepali)')}
           ${select('accountType','Account type','<option>ASSET</option><option>LIABILITY</option><option>EQUITY</option><option>INCOME</option><option>EXPENSE</option>')}
@@ -1505,11 +1509,13 @@
     async function trialBalance() {
       $('view').innerHTML = `<section class="panel"><h2>Trial Balance & Provisional Result</h2>
         <p class="hint">Summary from posted general journal entries. Financial year opening balances and closing adjustments require reconciliation.</p>
-        <div class="account-toolbar print-hide"><button class="btn" id="reloadTrial">Refresh</button>
+        <div class="account-toolbar print-hide"><label>Financial Year <select id="trialFY"></select></label><button class="btn" id="reloadTrial">Refresh</button>
         <button class="btn secondary" id="printTrial">Print / Save PDF</button></div>
         <div id="trialReport" class="print-target"></div></section>`;
+      const years=await request('financeYears');
+      $('trialFY').innerHTML='<option value="">All years (historical)</option>'+years.map(y=>`<option value="${escapeHtml(y.FinancialYearID)}">${escapeHtml(y.YearLabelBS)} — ${escapeHtml(y.Status)}</option>`).join('');
       const load = async () => {
-        const d = await withBusy(() => request('accountingReports'), 'Calculating trial balance…');
+        const d = await withBusy(() => request('accountingReports',{financialYearId:$('trialFY').value}), 'Calculating trial balance…');
         $('trialReport').innerHTML = printHeader('Trial Balance & Provisional Operating Result') +
           `<div class="account-metrics">
           <div class="account-metric"><small>Total Debit (NPR)</small><strong>${fmt(d.totalDr)}</strong></div>
@@ -1519,11 +1525,39 @@
           ${accountingTable(d.rows,[['code','Code'],['name','Ledger'],['type','Type'],['closingDr','Closing Dr','money'],['closingCr','Closing Cr','money']])}
           <div class="account-note">${escapeHtml(d.note)}</div>`;
       };
+      $('trialFY').onchange=()=>load().catch(e=>notify(e.message,true));
       $('reloadTrial').onclick = () => load().catch(e=>notify(e.message,true));
       $('printTrial').onclick = printCurrentReport;
       try { await load(); } catch(e) { notify(e.message,true); }
     }
 
+
+    // FINANCE: all dropdowns are backed by permanent master IDs.
+    async function financialYearsPage(){
+      $('view').innerHTML=`<section class="panel"><h2>Financial Year / आर्थिक वर्ष</h2><p class="hint">नेपालको आर्थिक वर्ष साउन १ देखि अर्को असार मसान्तसम्म। वास्तविक BS पात्रोबाट प्रमाणित AD मिति प्रविष्ट गर्नुहोस्। कुनै मिति अनुमान गरेर स्वतः भर्न हुँदैन।</p><div id="fyRows"></div>${state.role==='Super Admin'?`<form id="fyForm"><div class="form-grid"><label>FY (BS) <input name="yearLabelBS" placeholder="2083/84" required pattern="20[0-9]{2}/[0-9]{2}"></label><label>Start AD (BS साउन १) <input name="startAD" type="date" required></label><label>End AD (BS असार मसान्त) <input name="endAD" type="date" required></label></div><button class="btn" type="submit">Create Financial Year</button></form>`:''}</section>`;
+      const load=async()=>{$('fyRows').innerHTML=accountingTable(await request('financeYears'),[['YearLabelBS','BS Year'],['StartAD','Start AD'],['EndAD','End AD'],['Status','Status']]);};
+      await load();
+      if($('fyForm'))$('fyForm').onsubmit=async ev=>{ev.preventDefault();const b=ev.target.querySelector('[type=submit]');b.disabled=true;try{await request('financeYearSave',Object.fromEntries(new FormData(ev.target).entries()));notify('Financial year created.');ev.target.reset();await load();}catch(e){notify(e.message,true);}finally{b.disabled=false;}};
+    }
+    async function expenseCategoriesPage(){
+      $('view').innerHTML=`<section class="panel"><h2>Expense Category Master</h2><p class="hint">Create a category once; select it on every voucher. Category code is automatic.</p><div id="catRows"></div><button class="btn" id="catAdd">+ Add Expense Category</button></section>`;
+      const load=async()=>{$('catRows').innerHTML=accountingTable(await request('expenseCategories'),[['CategoryCode','Code'],['CategoryName','Category'],['Status','Status']]);};await load();
+      $('catAdd').onclick=async()=>{const accounts=(await request('chartOfAccounts')).filter(a=>a.AccountType==='EXPENSE'&&String(a.Status).toLowerCase()==='active');if(!accounts.length)return notify('Create an expense ledger first.',true);
+        const v=await erpFormModal('Add Expense Category',[{key:'categoryName',label:'Expense category name',required:true},{key:'ledgerAccountId',label:'Expense ledger ID (choose from Ledger Master)',required:true,type:'select',options:accounts.map(a=>({value:a.AccountID,label:a.AccountNameEN+' ('+a.AccountCode+')'}))}],'Save & Select');if(!v)return;
+        try{await request('expenseCategorySave',v);notify('Expense category saved.');await load();}catch(e){notify(e.message,true);}};
+    }
+    async function expenseEntryPage(){
+      $('view').innerHTML=`<section class="panel"><h2>Expense Voucher</h2><p class="hint">Select an existing category. Ledger posting is automatic.</p><form id="expenseForm"><div class="form-grid"><label>Expense Category *<select name="categoryId" id="expenseCategory" required></select></label><label>Amount (NPR) *<input name="amount" type="number" min="0.01" step="0.01" required></label><label>Payment Mode <select name="mode"><option value="CASH">Cash</option><option value="BANK">Bank</option></select></label><label>Note (optional)<input name="description" placeholder="Optional details"></label></div><div class="actions"><button class="btn" type="submit">Post Expense Once</button><button class="btn secondary" type="button" id="expenseQuickAdd">+ Add Category</button></div></form></section>`;
+      const load=async(selected)=>{const cats=await request('expenseCategories');$('expenseCategory').innerHTML='<option value="">Select expense category</option>'+cats.filter(c=>c.Status==='Active').map(c=>`<option value="${escapeHtml(c.CategoryID)}">${escapeHtml(c.CategoryName)}</option>`).join('');if(selected)$('expenseCategory').value=selected;};await load();
+      $('expenseQuickAdd').onclick=async()=>{const accounts=(await request('chartOfAccounts')).filter(a=>a.AccountType==='EXPENSE'&&String(a.Status).toLowerCase()==='active');const v=await erpFormModal('Add Expense Category',[{key:'categoryName',label:'Category name',required:true},{key:'ledgerAccountId',label:'Linked Expense Ledger',required:true,type:'select',options:accounts.map(a=>({value:a.AccountID,label:a.AccountNameEN}))}],'Save');if(!v)return;try{const r=await request('expenseCategorySave',v);await load(r.id);notify('Category created and selected.');}catch(e){notify(e.message,true);}};
+      $('expenseForm').onsubmit=async ev=>{ev.preventDefault();const btn=ev.target.querySelector('[type=submit]');btn.disabled=true;try{const result=await request('expense',Object.fromEntries(new FormData(ev.target).entries()));notify('Expense posted: '+result.id);ev.target.reset();}catch(e){notify(e.message,true);}finally{btn.disabled=false;}};
+    }
+    async function dayBookPage(){
+      $('view').innerHTML=`<section class="panel"><h2>Day Book / डे बुक</h2><label>Financial Year <select id="dayBookFY"></select></label><button class="btn" id="dayBookLoad">Load Day Book</button><div id="dayBookRows"></div></section>`;
+      const years=await request('financeYears');$('dayBookFY').innerHTML=years.map(y=>`<option value="${escapeHtml(y.FinancialYearID)}">${escapeHtml(y.YearLabelBS)}</option>`).join('');
+      $('dayBookLoad').onclick=async()=>{try{const d=await request('financeDayBook',{financialYearId:$('dayBookFY').value});$('dayBookRows').innerHTML=accountingTable(d.rows,[['VoucherDate','Date'],['VoucherID','Voucher'],['VoucherType','Type'],['Narration','Narration'],['Debit','Debit','money'],['Credit','Credit','money']])+`<p class="hint">${escapeHtml(d.note)}</p>`;}catch(e){notify(e.message,true);}};
+      if(years.length)$('dayBookLoad').click();
+    }
 
     // ================ COMBINED ERP MODULES ================
     const erpEsc = value => escapeHtml(String(value===undefined||value===null?'':value));
