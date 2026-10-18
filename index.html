@@ -330,6 +330,22 @@
       </form>
     </section>
   </div>
+  <div id="idleWarning" class="modal-overlay hide" role="presentation">
+    <div class="modal-card" role="alertdialog" aria-modal="true" aria-labelledby="idleWarningTitle">
+      <div class="modal-symbol">!</div>
+      <h2 id="idleWarningTitle">सुरक्षा सूचना</h2>
+      <p>तपाईंले केही समयदेखि सिस्टम प्रयोग गर्नुभएको छैन। एक मिनेटभित्र काम जारी नराखे सिस्टम स्वतः बन्द हुनेछ।</p>
+      <button type="button" class="btn" id="idleContinue">काम जारी राख्नुहोस्</button>
+    </div>
+  </div>
+  <div id="idleLocked" class="modal-overlay hide" role="presentation">
+    <div class="modal-card" role="alertdialog" aria-modal="true" aria-labelledby="idleLockedTitle">
+      <div class="modal-symbol error">!</div>
+      <h2 id="idleLockedTitle">सिस्टम सुरक्षित रूपमा लक भयो</h2>
+      <p>१५ मिनेटसम्म प्रयोग नभएकाले तपाईंको सत्र समाप्त भएको छ। फेरि लगइन गरेर मात्र कारोबार गर्न सकिन्छ।</p>
+      <button type="button" class="btn" id="idleLoginAgain">फेरि लगइन गर्नुहोस्</button>
+    </div>
+  </div>
   <iframe id="bridge" title="Secure Apps Script bridge" style="display:none"></iframe>
   <script>
     'use strict';
@@ -352,10 +368,82 @@
       ['chartAccounts', '▤ Chart of Accounts'],
       ['voucherEntry', '✚ Journal Voucher'],
       ['trialBalance', '⚖ Trial Balance / Result'],
-      ['userAccess', '♙ User Access']
+      ['userAccess', '♙ User Access'],
+      ['auditReport', '◷ अडिट रिपोर्ट']
     ];
     const state = { token: '', role: '', permissions: [], ready: false, current: 'dashboard', masters: null, pending: new Map(), seq: 0 };
     const $ = id => document.getElementById(id);
+    // Enterprise idle protection: warning at 14 minutes; lock at 15.
+    // Server also enforces the 15-minute idle and 6-hour absolute limits.
+    const IDLE_LIMIT_MS = 15 * 60 * 1000;
+    const IDLE_WARNING_MS = 14 * 60 * 1000;
+    let lastUserAction = Date.now();
+    let sessionStartedAt = 0;
+    let lockedByIdle = false;
+    let lastActivitySignal = 0;
+    function resetIdleTracking() {
+      lastUserAction = Date.now();
+      sessionStartedAt = Date.now();
+      lockedByIdle = false;
+      $('idleWarning').classList.add('hide');
+      $('idleLocked').classList.add('hide');
+    }
+    function idleLock() {
+      if (!state.token || lockedByIdle) return;
+      lockedByIdle = true;
+      // Invalidate server token as well; server enforces expiry independently.
+      request('logout').catch(() => {});
+      $('idleWarning').classList.add('hide');
+      $('idleLocked').classList.remove('hide');
+      state.token = '';
+      state.role = '';
+      state.permissions = [];
+      state.masters = null;
+      $('view').replaceChildren();
+      $('app').classList.add('hide');
+      $('loginScreen').classList.remove('hide');
+    }
+    ['pointerdown','keydown','touchstart','scroll'].forEach(name =>
+      document.addEventListener(name, () => {
+        if (!state.token || lockedByIdle) return;
+        const now = Date.now();
+        if (now - lastUserAction >= IDLE_LIMIT_MS || now - sessionStartedAt >= 6 * 3600000) {
+          idleLock(); return;
+        }
+        // Avoid continuous mouse movement and background requests counting as activity.
+        if (now - lastActivitySignal > 1000) {
+          lastUserAction = now;
+          lastActivitySignal = now;
+          $('idleWarning').classList.add('hide');
+        }
+      }, {passive:true}));
+    setInterval(() => {
+      if (!state.token || lockedByIdle) return;
+      const idle = Date.now() - lastUserAction;
+      if (idle >= IDLE_LIMIT_MS || Date.now() - sessionStartedAt >= 6 * 3600000) idleLock();
+      else if (idle >= IDLE_WARNING_MS) $('idleWarning').classList.remove('hide');
+    }, 5000);
+    // Keep the server-side session alive only during real, recent user activity.
+    // A background tab or automatic refresh must not count as user activity.
+    setInterval(() => {
+      if (state.token && !lockedByIdle &&
+          Date.now() - lastUserAction < 5 * 60000 &&
+          Date.now() - sessionStartedAt < 6 * 3600000) {
+        request('sessionPing').catch(() => {});
+      }
+    }, 4 * 60000);
+    $('idleContinue').addEventListener('click', () => {
+      if (Date.now() - lastUserAction >= IDLE_LIMIT_MS) {idleLock();return;}
+      lastUserAction = Date.now();
+      $('idleWarning').classList.add('hide');
+      request('sessionPing').catch(() => idleLock());
+    });
+    $('idleLoginAgain').addEventListener('click', () => {
+      $('idleLocked').classList.add('hide');
+      $('password').value = '';
+      $('username').focus();
+    });
+
     const fmt = n => Number(n || 0).toLocaleString('en-IN', {maximumFractionDigits:2});
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g,
       c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -371,11 +459,21 @@
       if (active) $('busyText').textContent = label;
     }
 
+    function nepaliMessage(message) {
+      const raw = String(message || '');
+      if (/ERP\.ACCOUNTS\.AR/i.test(raw)) return 'ग्राहकको उधारो हिसाब राख्ने खाता सेटअप भएको छैन। Super Admin ले Chart of Accounts मा Accounts Receivable खाता जाँच गर्नुहोस्।';
+      if (/Session expired|Please sign in|session.*बन्द|सत्र.*समाप्त/i.test(raw)) return 'सुरक्षाका कारण सत्र समाप्त भएको छ। कृपया फेरि लगइन गर्नुहोस्।';
+      if (/Access denied|Super Admin access required/i.test(raw)) return 'यो काम गर्ने अनुमति तपाईंको खातामा छैन। Super Admin लाई सम्पर्क गर्नुहोस्।';
+      if (/Invalid username or password/i.test(raw)) return 'प्रयोगकर्ता नाम वा पासवर्ड मिलेन। कृपया पुनः जाँच गर्नुहोस्।';
+      if (/Request timed out/i.test(raw)) return 'सर्भरबाट समयमा जवाफ आएन। कारोबार दोहोर्याउनुअघि पहिले सुरक्षित भएको छ कि छैन जाँच गर्नुहोस्।';
+      if (/is required/i.test(raw)) return 'आवश्यक विवरण छुटेको छ: ' + raw.replace(/ is required\.?/i,'') + '। कृपया भर्नुहोस्।';
+      return raw;
+    }
     function openModal(message, type = 'info', options = {}) {
       return new Promise(resolve => {
         modalResolve = resolve;
-        $('modalTitle').textContent = options.title || (type === 'error' ? 'Action could not be completed' : type === 'confirm' ? 'Please confirm' : 'Notification');
-        $('modalText').textContent = String(message);
+        $('modalTitle').textContent = options.title || (type === 'error' ? 'काम पूरा गर्न सकिएन' : type === 'confirm' ? 'कृपया पुष्टि गर्नुहोस्' : 'सूचना');
+        $('modalText').textContent = nepaliMessage(message);
         $('modalSymbol').textContent = type === 'error' ? '!' : type === 'confirm' ? '?' : '✓';
         $('modalSymbol').classList.toggle('error', type === 'error');
         $('modalCancel').classList.toggle('hide', type !== 'confirm' && type !== 'password');
@@ -420,6 +518,12 @@
     // The ERP_READY event comes from that inner frame, not the outer iframe.
     // Retain its exact window and origin for all subsequent requests.
     function request(action, data = {}) {
+      if (state.token && !lockedByIdle &&
+          (Date.now() - lastUserAction >= IDLE_LIMIT_MS ||
+           Date.now() - sessionStartedAt >= 6 * 3600000)) idleLock();
+      if (lockedByIdle && !['login','logout','requestReset','verifyReset','completeReset'].includes(action)) {
+        return Promise.reject(Error('सत्र समाप्त भएको छ। कृपया फेरि लगइन गर्नुहोस्।'));
+      }
       if (!state.ready || !bridgeWindow || !bridgeOrigin) {
         return Promise.reject(Error('Backend not connected. Check Web App deployment.'));
       }
@@ -483,6 +587,7 @@
       try {
         const data = await request('login', {username:$('username').value,password:$('password').value});
         state.token = data.token;
+        resetIdleTracking();
         state.role = data.role;
         state.permissions = data.permissions || [];
         renderNavigation();
@@ -614,7 +719,7 @@
 
     function renderNavigation() {
       $('navigation').innerHTML = pages.filter(([id]) =>
-        id === 'userAccess' ? state.role === 'Super Admin' :
+        (id === 'userAccess' || id === 'auditReport') ? state.role === 'Super Admin' :
         ['customerAccounts'].includes(id) ? state.permissions.includes('customers') :
         ['chartAccounts','voucherEntry','trialBalance'].includes(id) ? state.permissions.includes('ledger') :
         state.permissions.includes(id)).map(([id,title]) =>
@@ -626,8 +731,8 @@
     });
 
     function navigate(page) {
-      if (page === 'userAccess' && state.role !== 'Super Admin') return;
-      if (page !== 'userAccess' && !state.permissions.includes(page) &&
+      if (['userAccess','auditReport'].includes(page) && state.role !== 'Super Admin') return;
+      if (!['userAccess','auditReport'].includes(page) && !state.permissions.includes(page) &&
           !(page === 'customerAccounts' && state.permissions.includes('customers')) &&
           !(['chartAccounts','voucherEntry','trialBalance'].includes(page) && state.permissions.includes('ledger'))) return;
       state.current = page;
@@ -636,6 +741,7 @@
         button.classList.toggle('active',button.dataset.page === page));
       $('notice').classList.add('hide');
       if (page === 'userAccess') return withBusy(() => userAccess(), 'Loading user permissions…').catch(err => notify(err.message, true));
+      if (page === 'auditReport') return auditReport();
       if (page === 'dashboard') return dashboard();
       if (page === 'customerAccounts') return customerAccounts();
       if (page === 'chartAccounts') return chartAccounts();
@@ -645,6 +751,30 @@
       if (page === 'records') return records();
       if (page === 'ledger') return ledgerForm();
       renderForm(page);
+    }
+
+    async function auditReport() {
+      $('view').innerHTML = '<section class="panel"><h2>अडिट रिपोर्ट</h2><p>विवरण लोड हुँदैछ...</p></section>';
+      try {
+        const rows = await withBusy(() => request('auditReport'), 'अडिट विवरण लोड हुँदैछ...');
+        $('view').innerHTML = `<section class="panel"><h2>अडिट रिपोर्ट / Audit Trail</h2>
+          <p class="hint">कुन प्रयोगकर्ताले कुन काम कहिले गर्यो भन्ने पछिल्ला १००० अभिलेख। यो रिपोर्ट Super Admin का लागि मात्र हो।</p>
+          <div class="form-grid"><label>प्रयोगकर्ता / कार्य खोज्नुहोस्<input id="auditSearch" placeholder="नाम, कार्य वा Record ID"></label>
+          <label>कार्यको प्रकार<select id="auditAction"><option value="">सबै कार्य</option><option value="LOGIN">Login</option><option value="LOGOUT">Logout</option><option value="CREATE">Create</option><option value="PERMISSION">Permission</option><option value="SESSION_EXPIRED">Timeout</option></select></label></div>
+          <button class="btn secondary" id="auditPrint">रिपोर्ट प्रिन्ट गर्नुहोस्</button>
+          <div id="auditRows" style="overflow-x:auto;margin-top:16px"></div></section>`;
+        const draw = () => {
+          const q = $('auditSearch').value.trim().toLowerCase();
+          const action = $('auditAction').value;
+          const selected = rows.filter(r => (!q || [r.UserID,r.Action,r.ReferenceID,r.Timestamp].some(v=>String(v||'').toLowerCase().includes(q))) &&
+            (!action || String(r.Action||'').includes(action)));
+          $('auditRows').innerHTML = `<table style="width:100%"><thead><tr><th>मिति / समय</th><th>प्रयोगकर्ता</th><th>कार्य</th><th>सम्बन्धित विवरण</th></tr></thead><tbody>${selected.map(r=>`<tr><td>${escapeHtml(r.Timestamp)}</td><td>${escapeHtml(r.UserID)}</td><td>${escapeHtml(r.Action)}</td><td>${escapeHtml(r.ReferenceID)}</td></tr>`).join('') || '<tr><td colspan="4">अभिलेख भेटिएन।</td></tr>'}</tbody></table>`;
+        };
+        $('auditSearch').addEventListener('input',draw);
+        $('auditAction').addEventListener('change',draw);
+        $('auditPrint').onclick=()=>window.print();
+        draw();
+      } catch(err) {notify(err.message,true);}
     }
 
     async function userAccess() {
