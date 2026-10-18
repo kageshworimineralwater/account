@@ -2868,10 +2868,12 @@ module.exports = QRCode;
     const erpEsc = value => escapeHtml(String(value===undefined||value===null?'':value));
     const erpCash = n => 'रु. '+Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
     const erpTbl=(rows,keys)=>`<div class="table-wrap"><table><thead><tr>${keys.map(k=>`<th>${erpEsc(k[1])}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${keys.map(k=>`<td>${erpEsc(r[k[0]])}</td>`).join('')}</tr>`).join('')||`<tr><td colspan="${keys.length}">No records</td></tr>`}</tbody></table></div>`;
+    let erpAttendanceEmployee = null;
     async function erpEssPage(){
       $('view').innerHTML='<section class="panel">कर्मचारी विवरण लोड हुँदैछ...</section>';
       try{
         const d=await request('essHome');const e=d.employee;
+        erpAttendanceEmployee={name:String(e.FullName||''),id:String(e.EmployeeID||''),designation:String(e.Designation||'')};
         $('view').innerHTML=`<section class="panel"><h2>नमस्कार, ${erpEsc(e.FullName)}</h2><p>${erpEsc(e.EmployeeID)} · ${erpEsc(e.Designation)}</p>
           <div class="cards"><div class="card"><span>मासिक आधारभूत तलब</span><strong>${erpCash(e.BaseSalary)}</strong></div><div class="card"><span>बाँकी तलब</span><strong>${erpCash(d.salaryOutstanding)}</strong></div><div class="card"><span>बाँकी पेस्की</span><strong>${erpCash(d.advanceBalance)}</strong></div><div class="card"><span>हाजिरी रेकर्ड</span><strong>${d.attendance.length}</strong></div></div>
           <div class="actions"><button class="btn" id="essScanIn">QR हाजिरी सुरु</button><button class="btn secondary" id="essScanOut">QR हाजिरी समाप्त</button></div><p class="hint">हाजिरीको लागि Location र Camera Permission आवश्यक हुन्छ ।</p></section>
@@ -2881,6 +2883,44 @@ module.exports = QRCode;
           <section class="panel"><h2>तलब भुक्तानी इतिहास</h2>${erpTbl(d.payments,[['PaymentDate','मिति'],['Amount','रकम'],['Mode','माध्यम']])}</section>`;
         $('essScanIn').onclick=()=>erpScanAttendance('IN');$('essScanOut').onclick=()=>erpScanAttendance('OUT');
       }catch(e){notify(e.message,true);}
+    }
+    // A dedicated acknowledgement appears ONLY after the backend confirms the attendance post.
+    // Never infer success from QR detection or a completed camera scan alone.
+    function erpAttendanceSuccessAlert(mode, result){
+      const employee=erpAttendanceEmployee||{};
+      const isStart=mode==='IN';
+      const serverTimestamp=result&&result.timestamp;
+      let timeText='सर्भर समय सुरक्षित गरिएको छ';
+      if(serverTimestamp){
+        const dt=new Date(serverTimestamp);
+        if(!Number.isNaN(dt.getTime())){
+          timeText=new Intl.DateTimeFormat('en-GB',{
+            timeZone:'Asia/Kathmandu',year:'numeric',month:'short',day:'2-digit',
+            hour:'2-digit',minute:'2-digit',hour12:true
+          }).format(dt)+' (Nepal Time)';
+        }
+      }
+      const overlay=document.createElement('div');
+      overlay.className='modal-overlay';
+      overlay.style.zIndex='10050';
+      overlay.setAttribute('role','presentation');
+      overlay.innerHTML=`<div class="modal-card" role="alertdialog" aria-modal="true" aria-labelledby="erpAttendanceSuccessTitle" style="width:min(450px,96vw);padding:28px 22px;border-top:5px solid #15945d">
+        <div aria-hidden="true" style="width:66px;height:66px;margin:0 auto 12px;display:grid;place-items:center;border-radius:50%;background:#e4f8ee;color:#118354;font-size:38px;font-weight:800">✓</div>
+        <h2 id="erpAttendanceSuccessTitle" style="color:#116943;margin-bottom:8px">${isStart?'हाजिरी सफलतापूर्वक सुरु भयो':'हाजिरी सफलतापूर्वक समाप्त भयो'}</h2>
+        <p style="margin:0 0 16px">${isStart?'तपाईंको आजको हाजिरी सफलतापूर्वक दर्ता भयो।':'तपाईंको आजको हाजिरी समाप्ति सफलतापूर्वक दर्ता भयो।'}</p>
+        <div style="text-align:left;background:#f3f8fc;border:1px solid #e0e9f2;border-radius:13px;padding:14px 16px;margin-bottom:18px;line-height:1.9">
+          <div><strong>कर्मचारी:</strong> ${erpEsc(employee.name||'कर्मचारी')}</div>
+          <div><strong>कर्मचारी ID:</strong> ${erpEsc(employee.id||'—')}</div>
+          ${employee.designation?`<div><strong>पद:</strong> ${erpEsc(employee.designation)}</div>`:''}
+          <div><strong>${isStart?'हाजिरी सुरु':'हाजिरी समाप्त'} समय:</strong> ${erpEsc(timeText)}</div>
+          ${result&&result.attendanceId?`<div><strong>हाजिरी रेकर्ड:</strong> ${erpEsc(result.attendanceId)}</div>`:''}
+        </div>
+        <button type="button" class="btn" data-attendance-ok style="width:100%">ठीक छ</button>
+      </div>`;
+      document.body.appendChild(overlay);
+      const button=overlay.querySelector('[data-attendance-ok]');
+      button.onclick=()=>overlay.remove();
+      button.focus();
     }
     // Attendance security: location is verified before camera permission is requested.
     // A fresh GPS fix is checked again by the server when the QR is submitted.
@@ -2946,10 +2986,12 @@ module.exports = QRCode;
                 status('QR भेटियो। अन्तिम Location र हाजिरी प्रमाणित हुँदैछ...');
                 const position=await erpAttendancePosition();
                 if(!active)return;
-                await request('attendanceScan',{mode,qr:qr.slice('KAGESHWORI-ATTENDANCE:'.length),
+                const savedAttendance=await request('attendanceScan',{mode,qr:qr.slice('KAGESHWORI-ATTENDANCE:'.length),
                   latitude:position.coords.latitude,longitude:position.coords.longitude,accuracy:position.coords.accuracy});
                 if(!active)return;
-                close();notify(mode==='IN'?'हाजिरी सुरु सफल भयो।':'हाजिरी समाप्त सफल भयो।');
+                close();
+                erpAttendanceSuccessAlert(mode,savedAttendance);
+                // Refresh the employee attendance history without dismissing the acknowledgement.
                 erpEssPage();return;
               }
             }
