@@ -829,40 +829,57 @@
       } catch(err) {notify(err.message,true);}
     }
 
-    // Create/manage portal login from the existing master profile, without re-entering profile data.
+    // Reusable native ERP form modal. Never use browser prompt/confirm for profile management.
+    function erpFormModal(title, fields, submitLabel='Save Changes') {
+      return new Promise(resolve => {
+        const overlay=document.createElement('div');overlay.className='modal-overlay';overlay.style.zIndex='5100';
+        const inputs=fields.map(f=>`<label>${escapeHtml(f.label)}${f.required?' *':''}${f.options?`<select name="${f.key}">${f.options.map(v=>`<option value="${escapeHtml(v)}" ${v===f.value?'selected':''}>${escapeHtml(v)}</option>`).join('')}</select>`:`<input name="${f.key}" type="${f.type||'text'}" value="${escapeHtml(String(f.value??''))}" ${f.required?'required':''} ${f.type==='number'?'min="0" step="0.01"':''}>`}</label>`).join('');
+        overlay.innerHTML=`<div class="modal-card" style="width:min(650px,96vw);max-height:90vh;overflow:auto;text-align:left"><h2>${escapeHtml(title)}</h2><form class="form-grid">${inputs}<div style="display:flex;justify-content:flex-end;gap:10px;grid-column:1/-1"><button type="button" class="btn secondary" data-cancel>Cancel</button><button type="submit" class="btn">${escapeHtml(submitLabel)}</button></div></form></div>`;
+        document.body.appendChild(overlay);
+        const finish=v=>{overlay.remove();resolve(v)};
+        overlay.querySelector('[data-cancel]').onclick=()=>finish(null);
+        overlay.querySelector('form').onsubmit=e=>{e.preventDefault();const btn=e.currentTarget.querySelector('[type=submit]');if(btn.disabled)return;btn.disabled=true;finish(Object.fromEntries(new FormData(e.currentTarget)))};
+      });
+    }
+
     async function profileLoginAccess(role, profile) {
-      if(state.role!=='Super Admin') return notify('Login access requires Super Admin.',true);
+      if(state.role!=='Super Admin')return notify('Super Admin permission required.',true);
+      const id=role==='Employee'?profile.EmployeeID:profile.ShareholderID;
       try {
-        const result=await withBusy(()=>request('manageUsers',{command:'list'}),'Login account खोज्दै...');
-        const id=role==='Employee'?profile.EmployeeID:profile.ShareholderID;
-        const account=result.users.find(u=>u.role===role && u.linkedId===id);
+        const result=await withBusy(()=>request('manageUsers',{command:'list'}),'Checking linked account...');
+        const account=result.users.find(u=>u.role===role&&u.linkedId===id);
         if(account){
-          const action=await openModal(`${profile.FullName} (${id}) को Login: ${account.username} / ${account.status}. ${account.status==='Active'?'Deactivate':'Activate'} गर्ने?`, 'confirm', {title:'Manage '+role+' Login'});
-          if(!action)return;
-          await withBusy(()=>request('manageUsers',{command:'status',username:account.username,status:account.status==='Active'?'Inactive':'Active'}),'Login status परिवर्तन हुँदैछ...');
-          notify('Login status updated.');
-          if(role==='Employee') employeeWorkspace(); else erpShareholdersPage();
+          const isActive=account.status==='Active';
+          const modal=document.createElement('div');modal.className='modal-overlay';modal.style.zIndex='5100';
+          modal.innerHTML=`<div class="modal-card" style="width:min(520px,96vw);text-align:left"><h2>Manage ${role} Login</h2><p class="hint">${escapeHtml(profile.FullName)} · ${escapeHtml(id)}</p><div class="panel"><p><strong>Username:</strong> ${escapeHtml(account.username)}</p><p><strong>Account Status:</strong> <span style="font-weight:700;color:${isActive?'#16804c':'#a65d0a'}">${escapeHtml(account.status)}</span></p><p><strong>Profile Status:</strong> ${escapeHtml(profile.Status)}</p></div><p class="hint">Status changes require explicit confirmation. Profile and Login are independent records.</p><div class="actions"><button type="button" class="btn ${isActive?'secondary':''}" data-change>${isActive?'Deactivate Login':'Activate Login'}</button><button type="button" class="btn secondary" data-password>Reset Password</button><button type="button" class="btn secondary" data-close>Close</button></div></div>`;
+          document.body.appendChild(modal);
+          modal.querySelector('[data-close]').onclick=()=>modal.remove();
+          modal.querySelector('[data-change]').onclick=async ev=>{
+            const next=isActive?'Inactive':'Active';
+            if(next==='Active'&&profile.Status!=='Active')return notify('Inactive profile cannot receive login access.',true);
+            const reason=await erpFormModal(next==='Active'?'Activate Login':'Deactivate Login',[{key:'reason',label:'Reason / कारण',required:true}], 'Confirm '+next);
+            if(!reason)return;
+            const btn=ev.currentTarget;btn.disabled=true;
+            try{await request('manageUsers',{command:'status',username:account.username,status:next,reason:reason.reason});modal.remove();await notify('Login '+next+' successfully.');if(role==='Employee')employeeWorkspace();else erpShareholdersPage();}
+            catch(err){notify(err.message,true);}finally{btn.disabled=false;}
+          };
+          modal.querySelector('[data-password]').onclick=async ev=>{
+            const pwd=await openModal('Enter a new password (minimum 8 characters).','password',{title:'Reset '+account.username+' Password'});
+            if(!pwd)return;const btn=ev.currentTarget;btn.disabled=true;
+            try{await request('manageUsers',{command:'password',username:account.username,password:pwd});await notify('Password updated.');}
+            catch(err){notify(err.message,true);}finally{btn.disabled=false;}
+          };
           return;
         }
-        if(String(profile.Status).toLowerCase()!=='active')throw Error('Inactive profile लाई Login दिन मिल्दैन ।');
-        const modal=document.createElement('div');modal.className='modal-overlay';modal.id='profileLoginOverlay';
-        modal.innerHTML=`<div class="modal-card" style="width:min(480px,96vw);text-align:left;max-height:90vh;overflow:auto">
-          <h2>${role} Login Access</h2><p class="hint">${escapeHtml(profile.FullName)} · ${escapeHtml(id)} — Profile बाट स्वतः जोडिएको ।</p>
-          <form id="profileLoginForm" class="form-grid" style="grid-template-columns:1fr">
-            <label>Username<input name="username" required autocomplete="off"></label>
-            <label>Recovery Email<input name="email" type="email" required></label>
-            <label>Mobile<input name="mobile" inputmode="numeric" pattern="[0-9]{10}" value="${escapeHtml(profile.Mobile||'')}"></label>
-            <label>Initial Password<input name="password" type="password" minlength="8" required autocomplete="new-password"></label>
-            <p class="hint">Role: ${role} · Linked ID: ${escapeHtml(id)} (automatic)</p>
-            <div class="actions"><button class="btn" type="submit">Create Login</button><button class="btn secondary" type="button" id="profileLoginCancel">Cancel</button></div>
-          </form></div>`;
-        document.body.appendChild(modal);
-        modal.querySelector('#profileLoginCancel').onclick=()=>modal.remove();
-        modal.querySelector('form').onsubmit=async ev=>{
-          ev.preventDefault();const f=ev.currentTarget;const d=Object.fromEntries(new FormData(f));
-          try{await withBusy(()=>request('manageUsers',{command:'create',...d,role,linkedId:id}),'Login बनाउँदै...');modal.remove();notify('Login created for '+profile.FullName);if(role==='Employee')employeeWorkspace();else erpShareholdersPage();}
-          catch(e){notify(e.message,true);}
-        };
+        if(profile.Status!=='Active')throw Error('Only active profiles can receive login access.');
+        const data=await erpFormModal('Create '+role+' Login — '+profile.FullName,[
+          {key:'username',label:'Username',required:true},{key:'email',label:'Recovery Email',type:'email',required:true},
+          {key:'mobile',label:'Mobile',value:profile.Mobile||''},
+          {key:'password',label:'Initial Password (8+ characters)',type:'password',required:true}
+        ],'Create Login');
+        if(!data)return;if(data.password.length<8)throw Error('Password must contain at least 8 characters.');
+        await withBusy(()=>request('manageUsers',{command:'create',...data,role,linkedId:id}),'Creating account...');
+        await notify('Login account created successfully.');if(role==='Employee')employeeWorkspace();else erpShareholdersPage();
       }catch(err){notify(err.message,true);}
     }
 
@@ -1212,12 +1229,12 @@
         const matches = employees.filter(r => [r.EmployeeID,r.FullName,r.Mobile,r.Designation]
           .some(v => String(v || '').toLowerCase().includes(q)));
         $('employeeRows').innerHTML = `<table><thead><tr><th>कर्मचारी नम्बर</th><th>नाम</th>
-          <th>पद</th><th>मोबाइल</th><th>तलबको प्रकार</th><th>आधारभूत तलब</th><th>Action</th></tr></thead>
+          <th>पद</th><th>मोबाइल</th><th>तलबको प्रकार</th><th>आधारभूत तलब</th><th>स्थिति</th><th>Action</th></tr></thead>
           <tbody>${matches.map(r=>`<tr><td>${escapeHtml(r.EmployeeID)}</td>
           <td>${escapeHtml(r.FullName)}</td><td>${escapeHtml(r.Designation)}</td>
           <td>${escapeHtml(r.Mobile || '—')}</td><td>${escapeHtml(r.SalaryType)}</td>
-          <td>${fmt(r.BaseSalary)}</td><td class="profile-access"><button class="master-row-action" data-edit-employee="${escapeHtml(r.EmployeeID)}">Edit</button>${state.role==='Super Admin'?`<button class="btn secondary" type="button" data-access-employee="${escapeHtml(r.EmployeeID)}">Login Access</button>`:''}</td></tr>`).join('') ||
-          '<tr><td colspan="7">कर्मचारीको विवरण भेटिएन ।</td></tr>'}</tbody></table>`;
+          <td>${fmt(r.BaseSalary)}</td><td>${escapeHtml(r.Status)}</td><td class="profile-access"><button class="master-row-action" data-edit-employee="${escapeHtml(r.EmployeeID)}">Edit Profile</button><button class="btn secondary" type="button" data-employee-lifecycle="${escapeHtml(r.EmployeeID)}">${r.Status==='Active'?'End / Suspend':'Reactivate'}</button>${state.role==='Super Admin'?`<button class="btn secondary" type="button" data-access-employee="${escapeHtml(r.EmployeeID)}">Login Access</button>`:''}</td></tr>`).join('') ||
+          '<tr><td colspan="8">कर्मचारीको विवरण भेटिएन ।</td></tr>'}</tbody></table>`;
       };
       const reload = async () => {
         employees = await withBusy(() => request('employeeList'), 'कर्मचारी विवरण लोड हुँदैछ...');
@@ -1229,10 +1246,34 @@
         const profile=employees.find(e=>e.EmployeeID===b.dataset.accessEmployee);
         if(profile)profileLoginAccess('Employee',profile);
       });
-      $('employeeRows').addEventListener('click',async ev=>{const b=ev.target.closest('[data-edit-employee]');if(!b)return;const e=employees.find(x=>x.EmployeeID===b.dataset.editEmployee);if(!e)return;const changes={};
-        for(const [k,label] of [['FullName','Employee name'],['Mobile','Mobile'],['Designation','Designation'],['BaseSalary','Base salary'],['Address','Address']]){const v=prompt(label,String(e[k]||''));if(v===null)return;changes[k]=v;}
-        changes.Status=confirm('Keep employee Active? Cancel = Inactive')?'Active':'Inactive';
-        try{await request('employeeUpdate',{id:e.EmployeeID,changes});await reload();notify('Employee updated.');}catch(err){notify(err.message,true);}
+      $('employeeRows').addEventListener('click',async ev=>{
+        const b=ev.target.closest('[data-edit-employee]');if(!b)return;
+        const e=employees.find(x=>x.EmployeeID===b.dataset.editEmployee);if(!e)return;
+        const changes=await erpFormModal('Edit Employee — '+e.EmployeeID,[
+          {key:'FullName',label:'Full Name',value:e.FullName,required:true},
+          {key:'Mobile',label:'Mobile',value:e.Mobile},
+          {key:'Designation',label:'Designation',value:e.Designation,required:true},
+          {key:'SalaryType',label:'Salary Type',value:e.SalaryType,options:['Monthly','Daily']},
+          {key:'BaseSalary',label:'Base Salary',value:e.BaseSalary,type:'number'},
+          {key:'Address',label:'Address',value:e.Address}
+        ]);
+        if(!changes)return;
+        b.disabled=true;
+        try{await request('employeeUpdate',{id:e.EmployeeID,changes});await reload();await notify('Employee profile updated successfully.');}
+        catch(err){notify(err.message,true);}finally{b.disabled=false;}
+      });
+      $('employeeRows').addEventListener('click',async ev=>{
+        const b=ev.target.closest('[data-employee-lifecycle]');if(!b)return;
+        const e=employees.find(x=>x.EmployeeID===b.dataset.employeeLifecycle);if(!e)return;
+        const next=e.Status==='Active'?'Inactive':'Active';
+        const reason=await erpFormModal((next==='Inactive'?'End / Suspend Employment':'Reactivate / Rehire Employee')+' — '+e.EmployeeID,[
+          {key:'reason',label:'Reason / कारण',required:true},
+          {key:'effectiveDate',label:'Effective Date',type:'date',required:true}
+        ],'Confirm '+next);
+        if(!reason)return;
+        b.disabled=true;
+        try{await request('employeeLifecycle',{id:e.EmployeeID,status:next,reason:reason.reason,effectiveDate:reason.effectiveDate});await reload();await notify('Employment status updated. History retained.');}
+        catch(err){notify(err.message,true);}finally{b.disabled=false;}
       });
       $('employeeAdd').onclick = () => {
         const old = $('employeeEntryOverlay');
