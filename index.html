@@ -1635,12 +1635,44 @@
       }catch(err){notify(err.message,true);}
     }
     async function erpShareholdersPage(){
-      try{const rows=await request('shareholderList');$('view').innerHTML=`<section class="panel"><h2>Shareholder Directory</h2><form id="shrCreate" class="form-grid"><label>Full Name<input name="fullName" required></label><label>Mobile<input name="mobile"></label><div><button class="btn">Create Shareholder</button></div></form></section><section class="panel">${erpTbl(rows,[['ShareholderID','Shareholder ID'],['FullName','Name'],['Mobile','Mobile'],['Status','Status']])}<h3>Portal Login Access</h3><p class="hint">पहिले नै दर्ता भएका Shareholder बाट Login दिनुहोस् । नयाँ Profile दोहोर्याउनु पर्दैन ।</p><div class="profile-access">${rows.map(r=>`<button type="button" class="btn secondary" data-access-shareholder="${erpEsc(r.ShareholderID)}">${erpEsc(r.FullName)} · Login Access</button>`).join('')}</div></section>`;
-        $('view').querySelectorAll('[data-access-shareholder]').forEach(btn=>btn.onclick=()=>{
-          const profile=rows.find(r=>r.ShareholderID===btn.dataset.accessShareholder);
-          if(profile)profileLoginAccess('Shareholder',profile);
+      try{
+        const rows=await withBusy(()=>request('shareholderList'),'सेयरधनी व्यवस्थापन लोड हुँदैछ...');
+        const badge=s=>{const active=String(s).toLowerCase()==='active';return `<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:999px;background:${active?'#dcfce7':'#fee2e2'};color:${active?'#166534':'#991b1b'};font-weight:700;font-size:12px">${active?'● Active':'● Inactive'}</span>`};
+        $('view').innerHTML=`<section class="panel"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><h2>सेयरधनी व्यवस्थापन</h2><p class="hint">Profile, Status र Login Access एउटै ठाउँबाट व्यवस्थापन गर्नुहोस्।</p></div><button class="btn" id="shrAdd">+ नयाँ सेयरधनी</button></div><div style="margin-top:18px"><input id="shrSearch" placeholder="नाम, मोबाइल वा Shareholder ID खोज्नुहोस्" style="width:100%;max-width:430px"></div></section><section class="panel"><div style="overflow-x:auto"><table style="width:100%"><thead><tr><th>Shareholder ID</th><th>Name</th><th>Mobile</th><th>Status</th><th>Action</th></tr></thead><tbody id="shrRows">${rows.map(r=>`<tr data-shr-row="${erpEsc(r.ShareholderID)}"><td>${erpEsc(r.ShareholderID)}</td><td>${erpEsc(r.FullName)}</td><td>${erpEsc(r.Mobile)}</td><td>${badge(r.Status)}</td><td><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button type="button" class="btn secondary" data-shr-edit="${erpEsc(r.ShareholderID)}">Edit</button><button type="button" class="btn secondary" data-shr-status="${erpEsc(r.ShareholderID)}">${String(r.Status)==='Active'?'Deactivate':'Activate'}</button><button type="button" class="btn secondary" data-shr-access="${erpEsc(r.ShareholderID)}">Login Access</button><button type="button" class="btn secondary" data-shr-delete="${erpEsc(r.ShareholderID)}" style="color:#b91c1c">Delete</button></div></td></tr>`).join('')}</tbody></table></div>${rows.length?'':'<p class="hint">अहिलेसम्म कुनै सेयरधनी दर्ता भएको छैन।</p>'}</section>`;
+        const find=id=>rows.find(r=>String(r.ShareholderID)===id);
+        const save=async (d,button)=>{
+          if(button){if(button.disabled)return;button.disabled=true;button.textContent='Saving...';}
+          try{await withBusy(()=>request('shareholderSave',d),'सेयरधनी विवरण सुरक्षित हुँदैछ...');await notify('Shareholder saved successfully.');await erpShareholdersPage();}
+          catch(e){notify(e.message,true);if(button){button.disabled=false;button.textContent='Save';}}
+        };
+        $('shrAdd').onclick=async()=>{
+          const d=await erpFormModal('नयाँ सेयरधनी',[{key:'fullName',label:'Full Name',required:true},{key:'mobile',label:'Mobile Number',required:true}],'Create Shareholder');
+          if(d)await save(d);
+        };
+        $('shrSearch').oninput=e=>{const q=e.target.value.toLowerCase().trim();$('view').querySelectorAll('[data-shr-row]').forEach(tr=>{tr.style.display=tr.textContent.toLowerCase().includes(q)?'':'none';});};
+        $('view').querySelectorAll('[data-shr-edit]').forEach(btn=>btn.onclick=async()=>{
+          const r=find(btn.dataset.shrEdit);if(!r)return;
+          const d=await erpFormModal('Edit Shareholder — '+r.FullName,[{key:'fullName',label:'Full Name',value:r.FullName,required:true},{key:'mobile',label:'Mobile Number',value:r.Mobile,required:true}]);
+          if(d)await save({...d,id:r.ShareholderID});
         });
-        $('shrCreate').onsubmit=async ev=>{ev.preventDefault();const f=ev.currentTarget;try{const d=Object.fromEntries(new FormData(f));const r=await request('shareholderSave',d);await notify('Shareholder created: '+r.ShareholderID);erpShareholdersPage();}catch(e){notify(e.message,true);}};
+        $('view').querySelectorAll('[data-shr-access]').forEach(btn=>btn.onclick=()=>{const r=find(btn.dataset.shrAccess);if(r)profileLoginAccess('Shareholder',r);});
+        $('view').querySelectorAll('[data-shr-status]').forEach(btn=>btn.onclick=async()=>{
+          const r=find(btn.dataset.shrStatus);if(!r||btn.disabled)return;
+          const next=String(r.Status)==='Active'?'Inactive':'Active';
+          const data=await erpFormModal(next==='Active'?'Activate Shareholder':'Deactivate Shareholder',next==='Active'?[]:[{key:'reason',label:'Deactivation Reason',required:true}],next==='Active'?'Confirm Activation':'Confirm Deactivation');
+          if(!data)return;
+          btn.disabled=true;
+          try{await withBusy(()=>request('shareholderStatus',{id:r.ShareholderID,status:next,reason:data.reason||''}),'सेयरधनी स्थिति परिवर्तन हुँदैछ...');await notify('Shareholder '+next+'.');await erpShareholdersPage();}
+          catch(e){notify(e.message,true);btn.disabled=false;}
+        });
+        $('view').querySelectorAll('[data-shr-delete]').forEach(btn=>btn.onclick=async()=>{
+          const r=find(btn.dataset.shrDelete);if(!r||btn.disabled)return;
+          const data=await erpFormModal('Delete Shareholder — '+r.FullName,[{key:'confirmation',label:'Confirm by typing DELETE',required:true}],'Delete Unreferenced Record');
+          if(!data)return;if(data.confirmation!=='DELETE')return notify('Type DELETE exactly to confirm.',true);
+          btn.disabled=true;
+          try{await withBusy(()=>request('shareholderDelete',{id:r.ShareholderID}),'सेयरधनी विवरण जाँच हुँदैछ...');await notify('Unreferenced shareholder deleted.');await erpShareholdersPage();}
+          catch(e){notify(e.message,true);btn.disabled=false;}
+        });
       }catch(e){notify(e.message,true);}
     }
     async function erpPayrollPage(){
