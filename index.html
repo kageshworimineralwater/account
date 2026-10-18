@@ -369,6 +369,7 @@
       ['voucherEntry', '✚ Journal Voucher'],
       ['trialBalance', '⚖ Trial Balance / Result'],
       ['userAccess', '♙ User Access'],
+      ['companyLocations', '⌖ Company Locations'],
       ['auditReport', '◷ अडिट रिपोर्ट'],
       ['employees', '♙ कर्मचारी व्यवस्थापन'], ['payroll','▤ Payroll'], ['attendanceAdmin','◷ Attendance'], ['shareholders','♧ Shareholders'], ['ess','♙ मेरो विवरण'], ['shareholder','▦ Shareholder Reports']
     ];
@@ -720,7 +721,7 @@
 
     function renderNavigation() {
       $('navigation').innerHTML = pages.filter(([id]) =>
-        (id === 'userAccess' || id === 'auditReport' || id === 'shareholders') ? state.role === 'Super Admin' :
+        (id === 'userAccess' || id === 'auditReport' || id === 'shareholders' || id === 'companyLocations') ? state.role === 'Super Admin' :
         id === 'ess' ? state.role === 'Employee' :
         id === 'shareholder' ? state.role === 'Shareholder' :
         ['payroll','attendanceAdmin'].includes(id) ? (state.role==='Super Admin'||state.permissions.includes('employees')) :
@@ -735,10 +736,10 @@
     });
 
     function navigate(page) {
-      if (['userAccess','auditReport','shareholders'].includes(page) && state.role !== 'Super Admin') return;
+      if (['userAccess','auditReport','shareholders','companyLocations'].includes(page) && state.role !== 'Super Admin') return;
       if(page==='ess' && state.role!=='Employee')return;
       if(page==='shareholder' && state.role!=='Shareholder')return;
-      if (!['userAccess','auditReport','shareholders','ess','shareholder','payroll','attendanceAdmin'].includes(page) && !state.permissions.includes(page) &&
+      if (!['userAccess','auditReport','shareholders','companyLocations','ess','shareholder','payroll','attendanceAdmin'].includes(page) && !state.permissions.includes(page) &&
           !(page === 'customerAccounts' && state.permissions.includes('customers')) &&
           !(['chartAccounts','voucherEntry','trialBalance'].includes(page) && state.permissions.includes('ledger'))) return;
       if(['payroll','attendanceAdmin'].includes(page)&&state.role!=='Super Admin'&&!state.permissions.includes('employees'))return;
@@ -749,6 +750,7 @@
       $('notice').classList.add('hide');
       if (page === 'userAccess') return withBusy(() => userAccess(), 'Loading user permissions…').catch(err => notify(err.message, true));
       if (page === 'auditReport') return auditReport();
+      if (page === 'companyLocations') return erpCompanyLocationsPage();
       if (page === 'employees') return employeeWorkspace();
       if (page === 'ess') return erpEssPage();
       if (page === 'shareholder') return erpShareholderPage();
@@ -1361,6 +1363,57 @@
           if(active)setTimeout(tick,350);
         };tick();
       }catch(err){close();notify(err.message,true);}
+    }
+    // Super Admin: manage the attendance geofence without code edits or redeployment.
+    async function erpCompanyLocationsPage(){
+      try{
+        const data=await withBusy(()=>request('companyLocations',{command:'list'}),'कम्पनी Location लोड हुँदैछ...');
+        const safe=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        const locations=data.locations||[];
+        const active=data.activeLocation;
+        $('view').innerHTML=`<section class="panel"><h2>Company Location Settings</h2>
+          <p class="hint">Super Admin मात्र · कम्पनी सरेपछि यहाँबाट नयाँ Location Active गर्नुहोस् । Code.gs वा QR फेरि परिवर्तन गर्नुपर्दैन ।</p>
+          <div class="notice">Active Location: <strong>${active?safe(active.LocationName):'अहिलेसम्म सेट भएको छैन'}</strong>${active?' · '+safe(active.RadiusM)+' m':''}</div>
+          <form id="locForm" class="form-grid">
+            <label>Location Name<input name="name" required maxlength="120" placeholder="Main Factory"></label>
+            <label>Attendance Radius (मीटर)<select name="radiusM"><option value="50">50 m</option><option value="75">75 m</option><option value="100" selected>100 m</option><option value="150">150 m</option><option value="200">200 m</option></select></label>
+            <label>Latitude<input name="latitude" type="number" step="any" min="-90" max="90" required placeholder="27.xxxxxx"></label>
+            <label>Longitude<input name="longitude" type="number" step="any" min="-180" max="180" required placeholder="85.xxxxxx"></label>
+            <div class="field-wide actions"><button type="button" class="btn secondary" id="locGPS">⌖ Use Current GPS</button>
+              <label style="display:flex;align-items:center;gap:8px;margin:0"><input type="checkbox" name="activate" checked style="width:auto"> Save गरेर Active बनाउने</label></div>
+            <div class="field-wide"><button class="btn" type="submit">Save Company Location</button></div>
+          </form></section>
+          <section class="panel"><h2>Location History</h2><p class="hint">पुराना Location हटाइँदैनन्; Active Location मात्र Attendance मा लागू हुन्छ ।</p>
+          <div class="table-wrap"><table><thead><tr><th>Location</th><th>Coordinates</th><th>Radius</th><th>Status</th><th>Action</th></tr></thead><tbody>
+          ${locations.map(x=>`<tr><td>${safe(x.LocationName)}</td><td>${safe(x.Latitude)}, ${safe(x.Longitude)}</td><td>${safe(x.RadiusM)} m</td><td>${safe(x.Status)}</td><td>${x.Status==='Active'?'Active':`<button class="btn secondary" data-activate="${safe(x.LocationID)}">Set Active</button>`}</td></tr>`).join('')||'<tr><td colspan="5">No locations yet.</td></tr>'}
+          </tbody></table></div></section>
+          <section class="panel"><h2>Permanent Attendance QR</h2><p class="hint">यो QR Text गोप्य राख्नुहोस् । QR Code Generator मा यही पूरा Text प्रयोग गरेर एकपटक QR Print गर्नुहोस् । कम्पनी सर्दा QR परिवर्तन हुँदैन ।</p>
+          <div class="actions"><button type="button" class="btn secondary" id="locCopyQR">Copy Permanent QR Text</button></div></section>`;
+        $('locGPS').onclick=()=>{
+          if(!navigator.geolocation){notify('यो Browser मा GPS उपलब्ध छैन ।',true);return;}
+          navigator.geolocation.getCurrentPosition(pos=>{
+            $('locForm').elements.latitude.value=pos.coords.latitude.toFixed(7);
+            $('locForm').elements.longitude.value=pos.coords.longitude.toFixed(7);
+            notify('GPS Coordinates भरिएको छ । Accuracy: '+Math.round(pos.coords.accuracy)+' m । स्थान पुष्टि गरेर Save गर्नुहोस् ।');
+          },err=>notify('GPS प्राप्त भएन: '+err.message,true),{enableHighAccuracy:true,timeout:20000,maximumAge:0});
+        };
+        $('locCopyQR').onclick=()=>{
+          const qr=data.qrText||'';
+          if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(qr).then(()=>notify('QR Text Copy भयो ।')).catch(()=>notify('Clipboard Permission आवश्यक छ ।',true));
+          else notify('Clipboard उपलब्ध छैन ।',true);
+        };
+        $('locForm').onsubmit=async ev=>{
+          ev.preventDefault();const f=ev.currentTarget;const v=Object.fromEntries(new FormData(f));v.activate=f.elements.activate.checked;
+          if(!confirm('कम्पनी Location Save गर्ने? Active गर्दा नयाँ GPS Location तुरुन्त लागू हुन्छ ।'))return;
+          try{await withBusy(()=>request('companyLocations',{command:'save',...v}),'Location सुरक्षित हुँदैछ...');await notify('Company Location सुरक्षित भयो ।');erpCompanyLocationsPage();}
+          catch(err){notify(err.message,true);}
+        };
+        $('view').querySelectorAll('[data-activate]').forEach(btn=>btn.onclick=async()=>{
+          if(!confirm('यो Location Active बनाउने?'))return;
+          try{await withBusy(()=>request('companyLocations',{command:'activate',id:btn.dataset.activate}),'Location परिवर्तन हुँदैछ...');await notify('Active Location परिवर्तन भयो ।');erpCompanyLocationsPage();}
+          catch(err){notify(err.message,true);}
+        });
+      }catch(err){notify(err.message,true);}
     }
     async function erpShareholderPage(){
       $('view').innerHTML=`<section class="panel"><h2>Shareholder — Company Report</h2><p class="hint">Read-only · कम्पनीको व्यवस्थापकीय सारांश</p><div class="form-grid"><label>सुरु मिति<input type="date" id="shrStart"></label><label>अन्तिम मिति<input type="date" id="shrEnd"></label></div><div class="actions"><button class="btn secondary" data-range="today">आज</button><button class="btn secondary" data-range="week">यो हप्ता</button><button class="btn secondary" data-range="month">यो महिना</button><button class="btn" id="shrLoad">रिपोर्ट हेर्नुहोस्</button></div></section><div id="shrResult"></div>`;
