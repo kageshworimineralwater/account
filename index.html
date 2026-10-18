@@ -222,6 +222,49 @@
       body:has(#loginScreen:not(.hide)) #loginScreen { padding: 12px; }
       body:has(#loginScreen:not(.hide)) .login .panel { padding: 22px; }
     }
+
+    /* Accounting workspace: responsive, consistent enterprise controls */
+    .account-toolbar { display:flex; gap:12px; flex-wrap:wrap; align-items:end; margin:0 0 18px; }
+    .account-toolbar > div { flex:1; min-width:210px; }
+    .account-toolbar .btn { white-space:nowrap; }
+    .account-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:20px; }
+    .account-metric { background:#fff;border:1px solid var(--border);border-radius:14px;padding:18px; }
+    .account-metric small { display:block;color:var(--muted);margin-bottom:9px; }
+    .account-metric strong { font-size:23px;color:var(--navy); }
+    .account-grid-table { overflow-x:auto;max-width:100%; }
+    .account-grid-table table { min-width:640px; }
+    .account-grid-table tbody tr:hover { background:#f4f8fd; }
+    .account-print-header { display:none; }
+    .account-note { padding:12px 14px;border-radius:10px;background:#fff8e6;color:#805b12;font-size:12px;line-height:1.65;margin:14px 0; }
+    .voucher-line { display:grid;grid-template-columns:minmax(170px,3fr) 1fr 1fr auto;gap:10px;margin-bottom:10px;align-items:end; }
+    .voucher-line label { font-size:11px; }
+    .voucher-line button { align-self:end; }
+    @media(max-width:760px) {
+      .account-metrics { grid-template-columns:1fr; }
+      .voucher-line { grid-template-columns:1fr 1fr; }
+      .voucher-line > div:first-child { grid-column:1 / -1; }
+    }
+    @media print {
+      @page { size:A4; margin:15mm 13mm; }
+      html,body { height:auto!important;overflow:visible!important;background:#fff!important; }
+      .sidebar, header, .site-footer, .account-toolbar, .print-hide,
+      .busy-overlay,.modal-overlay,.recovery-card { display:none!important; }
+      .layout,.main,.content,#app { display:block!important;overflow:visible!important;
+        height:auto!important;min-height:0!important;max-width:none!important;padding:0!important;margin:0!important; }
+      .print-target { border:0!important;box-shadow:none!important;padding:0!important; }
+      .account-print-header { display:flex!important;gap:15px;align-items:center;
+        border-bottom:2px solid #102b48;padding-bottom:12px;margin-bottom:16px; }
+      .account-print-header img { width:58px;height:58px;object-fit:contain; }
+      .account-print-header h2 { margin:0;font-size:17px; }
+      .account-print-header p { margin:4px 0;font-size:10px; }
+      .account-grid-table { overflow:visible!important; }
+      .account-grid-table table { min-width:0!important;font-size:9px; }
+      .account-grid-table th,.account-grid-table td { white-space:normal;padding:6px; }
+      .account-metrics { grid-template-columns:repeat(3,1fr); }
+      .account-metric { padding:8px; }
+      .account-metric strong { font-size:15px; }
+      .account-note { font-size:10px; }
+    }
   </style>
 </head>
 <body>
@@ -286,7 +329,12 @@
       ['returns', '↩ Empty Jar Return'], ['receipts', '৳ Customer Receipt'],
       ['expenses', '▧ Expenses'], ['loads', '⇄ Vehicle Load'],
       ['settlements', '✓ Vehicle Settlement'], ['ledger', '☷ Ledger'],
-      ['records', '≡ Transaction Records'], ['userAccess', '♙ User Access']
+      ['records', '≡ Transaction Records'],
+      ['customerAccounts', '◉ Customer Accounts'],
+      ['chartAccounts', '▤ Chart of Accounts'],
+      ['voucherEntry', '✚ Journal Voucher'],
+      ['trialBalance', '⚖ Trial Balance / Result'],
+      ['userAccess', '♙ User Access']
     ];
     const state = { token: '', role: '', permissions: [], ready: false, current: 'dashboard', masters: null, pending: new Map(), seq: 0 };
     const $ = id => document.getElementById(id);
@@ -549,6 +597,8 @@
     function renderNavigation() {
       $('navigation').innerHTML = pages.filter(([id]) =>
         id === 'userAccess' ? state.role === 'Super Admin' :
+        ['customerAccounts'].includes(id) ? state.permissions.includes('customers') :
+        ['chartAccounts','voucherEntry','trialBalance'].includes(id) ? state.permissions.includes('ledger') :
         state.permissions.includes(id)).map(([id,title]) =>
         `<button class="nav" data-page="${id}">${title}</button>`).join('');
     }
@@ -559,7 +609,9 @@
 
     function navigate(page) {
       if (page === 'userAccess' && state.role !== 'Super Admin') return;
-      if (page !== 'userAccess' && !state.permissions.includes(page)) return;
+      if (page !== 'userAccess' && !state.permissions.includes(page) &&
+          !(page === 'customerAccounts' && state.permissions.includes('customers')) &&
+          !(['chartAccounts','voucherEntry','trialBalance'].includes(page) && state.permissions.includes('ledger'))) return;
       state.current = page;
       $('pageTitle').textContent = pages.find(p => p[0] === page)?.[1] || page;
       document.querySelectorAll('.nav').forEach(button =>
@@ -567,6 +619,10 @@
       $('notice').classList.add('hide');
       if (page === 'userAccess') return withBusy(() => userAccess(), 'Loading user permissions…').catch(err => notify(err.message, true));
       if (page === 'dashboard') return dashboard();
+      if (page === 'customerAccounts') return customerAccounts();
+      if (page === 'chartAccounts') return chartAccounts();
+      if (page === 'voucherEntry') return voucherEntry();
+      if (page === 'trialBalance') return trialBalance();
       if (page === 'records') return records();
       if (page === 'ledger') return ledgerForm();
       renderForm(page);
@@ -733,6 +789,188 @@
       container.innerHTML='<table><thead><tr>'+keys.map(k=>`<th>${escapeHtml(k)}</th>`).join('')+
         '</tr></thead><tbody>'+rows.map(row=>'<tr>'+keys.map(k=>`<td>${escapeHtml(row[k])}</td>`).join('')+'</tr>').join('')+'</tbody></table>';
     }
+
+
+    // ACCOUNTING WORKSPACE — existing login, OTP and transactions unchanged.
+    function printHeader(title, subtitle = '') {
+      return `<div class="account-print-header">
+        <img src="./logo.jpg" alt="Company logo" onerror="this.src='./logo.png'">
+        <div><h2>Kageshwori Mineral Water Industries Limited</h2>
+        <p>${escapeHtml(title)}</p><p>${escapeHtml(subtitle)}</p></div></div>`;
+    }
+
+    function printCurrentReport() {
+      window.print();
+    }
+
+    function accountingTable(rows, columns) {
+      if (!rows.length) return '<p class="hint">No posted records found.</p>';
+      return `<div class="account-grid-table"><table><thead><tr>` +
+        columns.map(c => `<th>${escapeHtml(c[1])}</th>`).join('') +
+        `</tr></thead><tbody>` + rows.map(row => '<tr>' + columns.map(c =>
+          `<td>${escapeHtml(c[2] === 'money' ? fmt(row[c[0]]) : row[c[0]])}</td>`).join('') +
+        '</tr>').join('') + '</tbody></table></div>';
+    }
+
+    async function customerAccounts() {
+      const customers = masters().customers || [];
+      $('view').innerHTML = `<section class="panel"><h2>Customer Accounts & Statements</h2>
+        <p class="hint">Permanent Customer ID, daily water purchase, payment, outstanding balance and jar movement.</p>
+        <div class="account-toolbar"><div><label for="customerAccountSelect">Customer account</label>
+        <select id="customerAccountSelect">${options(customers,'CustomerID','NameEN')}</select></div>
+        <button id="customerStatementLoad" class="btn">View Account</button>
+        <button id="customerStatementPrint" class="btn secondary" disabled>Print / Save PDF</button></div>
+        <div id="customerAccountReport"></div></section>`;
+      $('customerStatementLoad').onclick = async () => {
+        const customerId = $('customerAccountSelect').value;
+        if (!customerId) return notify('Select a customer account.', true);
+        try {
+          const report = await withBusy(() => request('customerStatement',{customerId}), 'Loading customer statement…');
+          const c = report.customer;
+          const subtitle = `${c.CustomerID} · ${c.NameEN || c.NameNE || ''} · ${c.Mobile || ''}`;
+          $('customerAccountReport').innerHTML = `<section class="panel print-target" id="customerStatementPrintable">
+            ${printHeader('Customer Account Statement', subtitle)}
+            <h2>${escapeHtml(c.NameEN || c.NameNE || c.CustomerID)}</h2>
+            <p class="hint">Account No. ${escapeHtml(c.CustomerID)} · Mobile: ${escapeHtml(c.Mobile || '—')} · Address: ${escapeHtml(c.Address || '—')}</p>
+            <div class="account-metrics">
+              <div class="account-metric"><small>Sales (NPR)</small><strong>${fmt(report.totalSales)}</strong></div>
+              <div class="account-metric"><small>Receipts (NPR)</small><strong>${fmt(report.totalReceipts)}</strong></div>
+              <div class="account-metric"><small>Net receivable (NPR)</small><strong>${fmt(report.balance)}</strong></div>
+            </div>
+            <h3>Transaction Statement</h3>
+            ${accountingTable(report.lines,[['date','Date'],['type','Type'],['reference','Reference'],['debit','Debit','money'],['credit','Credit','money'],['balance','Balance','money']])}
+            <h3>Daily Water Purchase Details</h3>
+            ${accountingTable(report.items,[['date','Date'],['invoiceId','Invoice ID'],['product','Product'],['quantity','Qty','money'],['rate','Rate','money'],['amount','Amount','money']])}
+            <h3>Returnable Jar Summary</h3>
+            <p>Issued: <strong>${fmt(report.jarsIssued)}</strong> · Returned: <strong>${fmt(report.jarsReturned)}</strong> · Net outstanding: <strong>${fmt(report.jarBalance)}</strong></p>
+            <p class="account-note">${escapeHtml(report.note)}</p>
+          </section>`;
+          $('customerStatementPrint').disabled = false;
+        } catch(error) { notify(error.message,true); }
+      };
+      $('customerStatementPrint').onclick = printCurrentReport;
+    }
+
+    async function chartAccounts() {
+      $('view').innerHTML = `<section class="panel"><h2>Chart of Accounts / Ledger Master</h2>
+        <p class="hint">Create permanent account codes and review the general ledger structure.</p>
+        <div class="account-toolbar print-hide"><button class="btn" id="newLedgerButton">+ Add Ledger</button>
+        <button class="btn secondary" id="printChartButton">Print / Save PDF</button></div>
+        <div id="chartReport" class="print-target"></div></section>`;
+      const load = async () => {
+        const rows = await withBusy(() => request('chartOfAccounts'), 'Loading account master…');
+        $('chartReport').innerHTML = printHeader('Chart of Accounts') +
+          accountingTable(rows,[['AccountCode','Code'],['AccountNameEN','Ledger Name'],['AccountType','Type'],['NormalSide','Normal'],['Status','Status']]);
+      };
+      try { await load(); } catch(e) { await notify(e.message,true); }
+      $('printChartButton').onclick = printCurrentReport;
+      $('newLedgerButton').onclick = () => {
+        $('view').insertAdjacentHTML('afterbegin',`<section class="panel print-hide" id="newLedgerPanel">
+          <h2>Create Ledger Account</h2><form id="ledgerCreateForm"><div class="form-grid">
+          ${field('accountCode','Account code','text','required')}
+          ${field('accountName','Ledger name (English)','text','required')}
+          ${field('accountNameNE','Ledger name (Nepali)')}
+          ${select('accountType','Account type','<option>ASSET</option><option>LIABILITY</option><option>EQUITY</option><option>INCOME</option><option>EXPENSE</option>')}
+          </div><div class="actions"><button class="btn">Create Ledger</button>
+          <button class="btn secondary" type="button" id="ledgerCancel">Cancel</button></div></form></section>`);
+        $('newLedgerButton').disabled = true;
+        $('ledgerCancel').onclick = () => { $('newLedgerPanel').remove(); $('newLedgerButton').disabled = false; };
+        $('ledgerCreateForm').onsubmit = async event => {
+          event.preventDefault();
+          const data = Object.fromEntries(new FormData(event.target).entries());
+          try {
+            await withBusy(() => request('createLedger', data), 'Creating ledger…');
+            state.masters = await request('bootstrap');
+            await chartAccounts();
+            notify('Ledger created successfully.');
+          } catch(e) { notify(e.message,true); }
+        };
+      };
+    }
+
+    function voucherEntry() {
+      const accountOptions = options(masters().accounts,'AccountID','AccountNameEN');
+      $('view').innerHTML = `<section class="panel"><h2>Journal Voucher Entry</h2>
+        <p class="hint">Balanced double-entry posting. Posted vouchers cannot be edited here.</p>
+        <div class="account-note">Post only verified transactions. For sales and customer receipts, use the dedicated Sales and Receipts modules to prevent duplicate entries.</div>
+        <form id="journalVoucherForm">
+          <label for="voucherNarration">Narration / Transaction details</label>
+          <textarea id="voucherNarration" name="narration" rows="2" required></textarea>
+          <div id="voucherLines" style="margin-top:20px"></div>
+          <div class="actions"><button class="btn secondary" type="button" id="voucherAddLine">+ Add line</button></div>
+          <div class="account-metrics" style="margin-top:20px">
+            <div class="account-metric"><small>Total Debit</small><strong id="voucherDebit">0.00</strong></div>
+            <div class="account-metric"><small>Total Credit</small><strong id="voucherCredit">0.00</strong></div>
+            <div class="account-metric"><small>Difference</small><strong id="voucherDifference">0.00</strong></div>
+          </div>
+          <div class="actions"><button class="btn" id="voucherPostButton">Validate & Post Voucher</button></div>
+        </form></section>`;
+      const line = () => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'voucher-line';
+        wrapper.innerHTML = `<div><label>Ledger account</label><select class="voucher-account" required>${accountOptions}</select></div>
+          <div><label>Debit (NPR)</label><input class="voucher-dr" type="number" min="0" step="0.01" value="0"></div>
+          <div><label>Credit (NPR)</label><input class="voucher-cr" type="number" min="0" step="0.01" value="0"></div>
+          <button type="button" class="btn secondary voucher-remove">×</button>`;
+        wrapper.querySelector('.voucher-remove').onclick = () => { if ($('voucherLines').children.length > 2) {wrapper.remove();updateTotals();} };
+        wrapper.addEventListener('input',updateTotals);
+        $('voucherLines').appendChild(wrapper);
+      };
+      const getLines = () => [...$('voucherLines').children].map(row => ({
+        account:row.querySelector('.voucher-account').value,
+        debit:Number(row.querySelector('.voucher-dr').value || 0),
+        credit:Number(row.querySelector('.voucher-cr').value || 0)
+      }));
+      const updateTotals = () => {
+        const lines = getLines();
+        const dr = lines.reduce((s,r)=>s+r.debit,0);
+        const cr = lines.reduce((s,r)=>s+r.credit,0);
+        $('voucherDebit').textContent = fmt(dr);
+        $('voucherCredit').textContent = fmt(cr);
+        $('voucherDifference').textContent = fmt(dr-cr);
+      };
+      line();line();updateTotals();
+      $('voucherAddLine').onclick = () => { if ($('voucherLines').children.length < 30) line(); };
+      $('journalVoucherForm').onsubmit = async event => {
+        event.preventDefault();
+        const lines = getLines();
+        const dr = Math.round(lines.reduce((s,r)=>s+r.debit,0)*100);
+        const cr = Math.round(lines.reduce((s,r)=>s+r.credit,0)*100);
+        if (!dr || dr !== cr) return notify('Debit and Credit must be equal.',true);
+        if (!await openModal('Post this journal permanently? Please verify all ledger accounts and amounts.', 'confirm')) return;
+        $('voucherPostButton').disabled = true;
+        try {
+          const result = await withBusy(() => request('postJournalVoucher', {
+            narration:$('voucherNarration').value,lines:lines}), 'Posting journal voucher…');
+          await notify('Voucher posted: ' + result.id);
+          voucherEntry();
+        } catch(error) { notify(error.message,true); }
+        finally { if ($('voucherPostButton')) $('voucherPostButton').disabled = false; }
+      };
+    }
+
+    async function trialBalance() {
+      $('view').innerHTML = `<section class="panel"><h2>Trial Balance & Provisional Result</h2>
+        <p class="hint">Summary from posted general journal entries. Financial year opening balances and closing adjustments require reconciliation.</p>
+        <div class="account-toolbar print-hide"><button class="btn" id="reloadTrial">Refresh</button>
+        <button class="btn secondary" id="printTrial">Print / Save PDF</button></div>
+        <div id="trialReport" class="print-target"></div></section>`;
+      const load = async () => {
+        const d = await withBusy(() => request('accountingReports'), 'Calculating trial balance…');
+        $('trialReport').innerHTML = printHeader('Trial Balance & Provisional Operating Result') +
+          `<div class="account-metrics">
+          <div class="account-metric"><small>Total Debit (NPR)</small><strong>${fmt(d.totalDr)}</strong></div>
+          <div class="account-metric"><small>Total Credit (NPR)</small><strong>${fmt(d.totalCr)}</strong></div>
+          <div class="account-metric"><small>Provisional result (NPR)</small><strong>${fmt(d.provisionalResult)}</strong></div>
+          </div><p class="hint">Journal status: ${d.balanced?'Balanced':'Difference detected — review entries'}</p>
+          ${accountingTable(d.rows,[['code','Code'],['name','Ledger'],['type','Type'],['closingDr','Closing Dr','money'],['closingCr','Closing Cr','money']])}
+          <div class="account-note">${escapeHtml(d.note)}</div>`;
+      };
+      $('reloadTrial').onclick = () => load().catch(e=>notify(e.message,true));
+      $('printTrial').onclick = printCurrentReport;
+      try { await load(); } catch(e) { notify(e.message,true); }
+    }
+
   </script>
 </body>
 </html>
