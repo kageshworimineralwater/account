@@ -251,7 +251,7 @@
   </div>
   <footer class="site-footer">© 2026 Kageshwori Mineral Water Industries Limited <span>•</span> Designed &amp; Developed by <strong>Nirajan Aryal</strong> (<a href="tel:9851113811">9851113811</a>)</footer>
   <div id="globalBusy" class="busy-overlay hide" role="status" aria-live="polite"><div class="busy-card"><div class="spinner"></div><strong id="busyText">Processing your request…</strong><small>Please wait; do not submit again.</small></div></div>
-  <div id="modalOverlay" class="modal-overlay hide" role="presentation"><div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div id="modalSymbol" class="modal-symbol">✓</div><h2 id="modalTitle">Notification</h2><p id="modalText"></p><div id="modalInputWrap" class="hide"><label for="modalInput">New password</label><input id="modalInput" type="password" autocomplete="new-password" minlength="12" placeholder="At least 12 characters"></div><div class="modal-actions"><button type="button" class="btn secondary hide" id="modalCancel">Cancel</button><button type="button" class="btn" id="modalOK">OK</button></div></div></div>
+  <div id="modalOverlay" class="modal-overlay hide" role="presentation"><div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div id="modalSymbol" class="modal-symbol">✓</div><h2 id="modalTitle">Notification</h2><p id="modalText"></p><div id="modalInputWrap" class="hide"><label for="modalInput">New password</label><input id="modalInput" type="password" autocomplete="new-password" minlength="8" placeholder="At least 8 characters"></div><div class="modal-actions"><button type="button" class="btn secondary hide" id="modalCancel">Cancel</button><button type="button" class="btn" id="modalOK">OK</button></div></div></div>
   <div id="recoveryOverlay" class="modal-overlay hide">
     <section class="modal-card recovery-card" role="dialog" aria-modal="true" aria-labelledby="recoveryTitle">
       <button type="button" class="recovery-close" id="recoveryClose" aria-label="Close">×</button>
@@ -263,7 +263,7 @@
           <label for="recoveryEmail">Registered email</label><input id="recoveryEmail" type="email" autocomplete="email" required>
         </div>
         <div id="recoveryOtp" class="hide"><label for="recoveryCode">Six-digit email code</label><input id="recoveryCode" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code"></div>
-        <div id="recoveryNewPassword" class="hide"><label for="recoveryPassword">New password (12+ characters)</label><input id="recoveryPassword" type="password" minlength="12" autocomplete="new-password"><label for="recoveryConfirm">Confirm password</label><input id="recoveryConfirm" type="password" minlength="12" autocomplete="new-password"></div>
+        <div id="recoveryNewPassword" class="hide"><label for="recoveryPassword">New password (8+ characters)</label><input id="recoveryPassword" type="password" minlength="8" autocomplete="new-password"><label for="recoveryConfirm">Confirm password</label><input id="recoveryConfirm" type="password" minlength="8" autocomplete="new-password"></div>
         <button type="submit" class="btn login-submit" id="recoverySubmit">Send verification code</button>
         <button type="button" class="forgot-link hide" id="recoveryRestart">Start again</button>
       </form>
@@ -315,7 +315,7 @@
         $('modalCancel').classList.toggle('hide', type !== 'confirm' && type !== 'password');
         $('modalInputWrap').classList.toggle('hide', type !== 'password');
         $('modalInput').value = '';
-        $('modalInput').minLength = options.minLength || 12;
+        $('modalInput').minLength = options.minLength || 8;
         $('modalOverlay').classList.remove('hide');
         $('modalOK').focus();
       });
@@ -521,7 +521,7 @@
     $('changePasswordButton').addEventListener('click',async()=>{
       const current=await openModal('Enter your current password.','password',{title:'Current password',minLength:1});
       if (!current) return;
-      const next=await openModal('Enter a new password of at least 12 characters.','password',{title:'New password',minLength:12});
+      const next=await openModal('Enter a new password of at least 8 characters.','password',{title:'New password',minLength:8});
       if (!next) return;
       await withBusy(async()=>{
         try {
@@ -581,7 +581,7 @@
           <p class="hint">Accounts are read from the Google Sheet User tab. Inactive users lose access immediately.</p>
           <form id="createAccount">
             ${field('newUsername','New username')}
-            ${field('newPassword','Password (minimum 12 characters)','password')}
+            ${field('newPassword','Password (minimum 8 characters)','password')}
             <label>Account Type</label><select name="role"><option>Admin</option><option>Super Admin</option></select>
             <p><button class="btn">Create account</button></p>
           </form></section>
@@ -613,7 +613,7 @@
         catch(err){notify(err.message,true);}
       });
       $('view').querySelectorAll('[data-password]').forEach(btn=>btn.onclick=async()=>{
-        const password=await openModal('Enter a new password for '+btn.dataset.password+' (minimum 12 characters).', 'password', {title:'Reset account password'});
+        const password=await openModal('Enter a new password for '+btn.dataset.password+' (minimum 8 characters).', 'password', {title:'Reset account password'});
         if(password===null)return;
         try {await withBusy(() => request('manageUsers',{command:'password',username:btn.dataset.password,password}), 'Updating password…');notify('Password updated.');}
         catch(err){notify(err.message,true);}
