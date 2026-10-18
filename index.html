@@ -295,6 +295,19 @@
     .drawer-footer {border-top:1px solid var(--border);padding:17px 25px;display:flex;justify-content:flex-end;gap:10px;background:#fff}
     .master-empty {padding:38px 15px;text-align:center;color:var(--muted)}
     @media(max-width:640px){.master-drawer{width:100%}.drawer-header,.drawer-body{padding:18px}.drawer-footer{padding:14px}}
+  
+    /* Status indicators: color and text both communicate the state. */
+    .erp-status-badge {display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font-size:11px;font-weight:800;white-space:nowrap;border:1px solid transparent;line-height:1.4;}
+    .erp-status-badge::before {content:"";width:7px;height:7px;border-radius:50%;background:currentColor;flex:none;}
+    .erp-status-active {color:#137a46;background:#e5f7ec;border-color:#a6dfbd;}
+    .erp-status-inactive {color:#b42331;background:#ffedf0;border-color:#f3b7c0;}
+    .erp-status-pending {color:#996300;background:#fff5d9;border-color:#f2d68a;}
+    .erp-status-closed {color:#526174;background:#edf1f6;border-color:#d3dce6;}
+    .erp-page-loading {display:flex;align-items:center;gap:14px;padding:24px 10px;min-height:90px;color:var(--navy);}
+    .erp-page-loading .spinner {flex:none;}
+    .erp-page-loading strong {display:block;font-size:15px;margin-bottom:5px;}
+    .erp-page-loading small {display:block;color:var(--muted);font-size:12px;}
+
   </style>
 </head>
 <body>
@@ -817,6 +830,31 @@
       }
     });
 
+    // Immediate, contextual feedback for every authorized page navigation.
+    // This is presentation-only; it does not modify existing API requests.
+    const erpPageLoadingNames = {
+      dashboard:'ड्यासबोर्ड', customers:'ग्राहक व्यवस्थापन', products:'उत्पादन व्यवस्थापन',
+      vehicles:'सवारीसाधन व्यवस्थापन', production:'उत्पादन विवरण', sales:'बिक्री तथा VAT बिल',
+      returns:'खाली जार फिर्ता', receipts:'ग्राहकबाट रकम प्राप्ति', expenses:'खर्च व्यवस्थापन',
+      loads:'सवारी लोड विवरण', settlements:'सवारी हिसाब मिलान', ledger:'लेजर',
+      records:'कारोबार अभिलेख', customerAccounts:'ग्राहक खाता', chartAccounts:'Chart of Accounts',
+      voucherEntry:'Journal Voucher', trialBalance:'Trial Balance / Result',
+      userAccess:'प्रयोगकर्ता पहुँच व्यवस्थापन', companyLocations:'कम्पनी लोकेसन',
+      auditReport:'अडिट रिपोर्ट', employees:'कर्मचारी व्यवस्थापन', payroll:'तलब व्यवस्थापन',
+      attendanceAdmin:'हाजिरी विवरण', shareholders:'सेयरधनी व्यवस्थापन',
+      ess:'मेरो कर्मचारी विवरण', shareholder:'सेयरधनी रिपोर्ट'
+    };
+    function erpShowPageLoading(page) {
+      const title=erpPageLoadingNames[page] || pages.find(p=>p[0]===page)?.[1] || 'विवरण';
+      $('view').innerHTML = `<section class="panel" role="status" aria-live="polite" aria-busy="true"><div class="erp-page-loading"><div class="spinner" aria-hidden="true"></div><div><strong>${escapeHtml(title)} लोड हुँदैछ...</strong><small>कृपया प्रतीक्षा गर्नुहोस्। विवरण प्राप्त भएपछि स्वतः देखिनेछ।</small></div></div></section>`;
+    }
+    function erpEmployeeStatusBadge(status) {
+      const value=String(status||'Inactive').trim();
+      const key=value.toLowerCase();
+      const tone=key==='active'?'active':(key==='inactive'||key==='deactivated'||key==='disabled')?'inactive':(key==='suspended'||key==='pending')?'pending':'closed';
+      return `<span class="erp-status-badge erp-status-${tone}" title="Employee status: ${escapeHtml(value)}">${escapeHtml(value)}</span>`;
+    }
+
     function navigate(page) {
       if (['userAccess','auditReport','shareholders','companyLocations'].includes(page) && state.role !== 'Super Admin') return;
       if(page==='ess' && state.role!=='Employee')return;
@@ -831,6 +869,7 @@
       document.querySelectorAll('.nav').forEach(button =>
         button.classList.toggle('active',button.dataset.page === page));
       $('notice').classList.add('hide');
+      erpShowPageLoading(page);
       if (page === 'userAccess') return withBusy(() => userAccess(), 'Loading user permissions…').catch(err => notify(err.message, true));
       if (page === 'auditReport') return auditReport();
       if (page === 'companyLocations') return erpCompanyLocationsPage();
@@ -1280,7 +1319,7 @@
           <tbody>${matches.map(r=>`<tr><td>${escapeHtml(r.EmployeeID)}</td>
           <td>${escapeHtml(r.FullName)}</td><td>${escapeHtml(r.Designation)}</td>
           <td>${escapeHtml(r.Mobile || '—')}</td><td>${escapeHtml(r.SalaryType)}</td>
-          <td>${fmt(r.BaseSalary)}</td><td>${escapeHtml(r.Status)}</td><td class="profile-access"><button class="master-row-action" data-edit-employee="${escapeHtml(r.EmployeeID)}">Edit Profile</button><button class="btn secondary" type="button" data-employee-lifecycle="${escapeHtml(r.EmployeeID)}">${r.Status==='Active'?'Deactivate':'Activate'}</button>${state.role==='Super Admin'?`<button class="btn secondary" type="button" data-access-employee="${escapeHtml(r.EmployeeID)}">Login Access</button>`:''}</td></tr>`).join('') ||
+          <td>${fmt(r.BaseSalary)}</td><td>${erpEmployeeStatusBadge(r.Status)}</td><td class="profile-access"><button class="master-row-action" data-edit-employee="${escapeHtml(r.EmployeeID)}">Edit Profile</button><button class="btn secondary" type="button" data-employee-lifecycle="${escapeHtml(r.EmployeeID)}">${r.Status==='Active'?'Deactivate':'Activate'}</button>${state.role==='Super Admin'?`<button class="btn secondary" type="button" data-access-employee="${escapeHtml(r.EmployeeID)}">Login Access</button>`:''}</td></tr>`).join('') ||
           '<tr><td colspan="8">कर्मचारीको विवरण भेटिएन ।</td></tr>'}</tbody></table>`;
       };
       const reload = async () => {
