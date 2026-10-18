@@ -895,7 +895,7 @@
       if (page === 'chartAccounts') return chartAccounts();
       if (page === 'voucherEntry') return voucherEntry();
       if (page === 'trialBalance') return trialBalance();
-      if (page === 'financialYears') return financialYearsPage();
+      if (page === 'financialYears') return financialYearsPage().catch(err => notify('आर्थिक वर्ष पृष्ठमा समस्या: '+err.message,true));
       if (page === 'dayBook') return dayBookPage();
       if (page === 'expenseCategories') return expenseCategoriesPage();
       if (page === 'customers') return customerWorkspace();
@@ -1553,7 +1553,31 @@
     async function financialYearsPage(){
       $('view').innerHTML=`<section class="panel"><h2>Financial Year / आर्थिक वर्ष</h2><p class="hint">नेपालको आर्थिक वर्ष साउन १ देखि अर्को असार मसान्तसम्म। वास्तविक BS पात्रोबाट प्रमाणित AD मिति प्रविष्ट गर्नुहोस्। कुनै मिति अनुमान गरेर स्वतः भर्न हुँदैन।</p><div id="fyRows"></div>${state.role==='Super Admin'?`<form id="fyForm"><div class="form-grid"><label>FY (BS) <input name="yearLabelBS" placeholder="2083/84" required pattern="20[0-9]{2}/[0-9]{2}"></label><label>Start AD (BS साउन १) <input name="startAD" type="date" required></label><label>End AD (BS असार मसान्त) <input name="endAD" type="date" required></label></div><button class="btn" type="submit">Create Financial Year</button></form>`:''}</section>`;
       const load=async()=>{$('fyRows').innerHTML=accountingTable(await request('financeYears'),[['YearLabelBS','BS Year'],['StartAD','Start AD'],['EndAD','End AD'],['Status','Status']]);};
-      await load();
+      // Bind the critical Save handler BEFORE any remote loading. A failed initial
+      // fetch must never leave Create Financial Year looking clickable but inert.
+      if($('fyForm')) $('fyForm').addEventListener('submit', async ev=>{
+        ev.preventDefault();
+        const form=ev.currentTarget, button=form.querySelector('[type=submit]');
+        if(button.disabled)return;
+        const payload=Object.fromEntries(new FormData(form).entries());
+        if(!payload.startAD || !payload.endAD){await notify('Start AD र End AD दुवै मिति छान्नुहोस्।',true);return;}
+        if(payload.startAD>=payload.endAD){await notify('End AD मिति Start AD भन्दा पछिको हुनुपर्छ।',true);return;}
+        const original=button.textContent;
+        button.disabled=true;button.textContent='⏳ Creating Financial Year...';
+        try{
+          await withBusy(()=>request('financeYearSave',payload),'आर्थिक वर्ष सिर्जना हुँदैछ...');
+          await notify('आर्थिक वर्ष सफलतापूर्वक सिर्जना भयो।');
+          form.reset();
+          try{state.financeGate=await request('financeGate');await load();
+            if($('fyStatusId')) $('fyStatusId').innerHTML=(await request('financeYears')).map(y=>`<option value="${escapeHtml(y.FinancialYearID)}">${escapeHtml(y.YearLabelBS)} (${escapeHtml(y.Status)})</option>`).join('');
+          }catch(refreshError){await notify('आर्थिक वर्ष सिर्जना भयो, तर सूची Refresh हुन सकेन: '+refreshError.message,true);}
+        }catch(error){await notify('आर्थिक वर्ष सिर्जना हुन सकेन: '+error.message,true);}
+        finally{button.disabled=false;button.textContent=original;}
+      });
+      try{await load();}catch(error){
+        $('fyRows').innerHTML='<p class="hint" role="alert">आर्थिक वर्षको सूची लोड हुन सकेन। नयाँ वर्ष बनाउने बटन भने सक्रिय छ।</p>';
+        notify('Financial Year सूची लोड हुन सकेन: '+error.message,true);
+      }
       if(state.role==='Super Admin'){
         $('fyRows').insertAdjacentHTML('beforeend',`<details style="margin:14px 0"><summary><strong>Import Verified Opening Balances (one-time)</strong></summary><p class="hint">Only for a FY with no posted vouchers. Use certified balances; debit and credit must match. Existing customer/supplier subledger balances require separate reconciliation.</p><label>Financial Year <select id="openingFY"></select></label><div id="openingLines"></div><div class="actions"><button class="btn secondary" id="openingAdd">+ Add Ledger Line</button><button class="btn" id="openingPost">Post Opening Balances</button></div></details>`);
         const years=await request('financeYears');
@@ -1568,9 +1592,9 @@
         $('fyRows').insertAdjacentHTML('afterend',`<div class="account-note" style="margin:14px 0"><strong>Year Status Control</strong><div class="form-grid"><label>Financial Year <select id="fyStatusId"></select></label><label>Status <select id="fyNewStatus"><option value="Open">Open</option><option value="Locked">Locked</option><option value="Closed">Closed</option></select></label><label>Reason / Audit reference <input id="fyReason" placeholder="Reason for closing/reopening"></label></div><button class="btn secondary" id="fyStatusSave">Update Year Status</button></div>`);
         const statusLoad=async()=>{const ys=await request('financeYears');$('fyStatusId').innerHTML=ys.map(y=>`<option value="${escapeHtml(y.FinancialYearID)}">${escapeHtml(y.YearLabelBS)} (${escapeHtml(y.Status)})</option>`).join('');};
         await statusLoad();
-        $('fyStatusSave').onclick=async()=>{try{await request('financeYearStatus',{financialYearId:$('fyStatusId').value,status:$('fyNewStatus').value,reason:$('fyReason').value});state.financeGate=await request('financeGate');await load();await statusLoad();notify('Financial year status updated.');}catch(e){notify(e.message,true);}};
+        $('fyStatusSave').onclick=async()=>{const b=$('fyStatusSave');if(b.disabled)return;const old=b.textContent;b.disabled=true;b.textContent='⏳ Updating...';try{await withBusy(()=>request('financeYearStatus',{financialYearId:$('fyStatusId').value,status:$('fyNewStatus').value,reason:$('fyReason').value}),'आर्थिक वर्षको स्थिति अपडेट हुँदैछ...');state.financeGate=await request('financeGate');await load();await statusLoad();await notify('आर्थिक वर्षको स्थिति अपडेट भयो।');}catch(e){await notify(e.message,true);}finally{b.disabled=false;b.textContent=old;}};
       }
-      if($('fyForm'))$('fyForm').onsubmit=async ev=>{ev.preventDefault();const b=ev.target.querySelector('[type=submit]');b.disabled=true;try{await request('financeYearSave',Object.fromEntries(new FormData(ev.target).entries()));state.financeGate=await request('financeGate');notify('Financial year created.');ev.target.reset();await load();if($('fyStatusId')){$('fyStatusId').innerHTML=(await request('financeYears')).map(y=>`<option value="${escapeHtml(y.FinancialYearID)}">${escapeHtml(y.YearLabelBS)} (${escapeHtml(y.Status)})</option>`).join('');}}catch(e){notify(e.message,true);}finally{b.disabled=false;}};
+
     }
     async function expenseCategoriesPage(){
       $('view').innerHTML=`<section class="panel"><h2>Expense Category Master</h2><p class="hint">Create a category once; select it on every voucher. Category code is automatic.</p><div id="catRows"></div><button class="btn" id="catAdd">+ Add Expense Category</button></section>`;
