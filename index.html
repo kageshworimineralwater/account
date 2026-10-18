@@ -334,15 +334,15 @@
     <div class="modal-card" role="alertdialog" aria-modal="true" aria-labelledby="idleWarningTitle">
       <div class="modal-symbol">!</div>
       <h2 id="idleWarningTitle">सुरक्षा सूचना</h2>
-      <p>तपाईंले केही समयदेखि सिस्टम प्रयोग गर्नुभएको छैन। एक मिनेटभित्र काम जारी नराखे सिस्टम स्वतः बन्द हुनेछ।</p>
+      <p>तपाईंले केही समयदेखि सिस्टम प्रयोग गर्नुभएको छैन । एक मिनेटभित्र काम जारी नराखे सिस्टम स्वतः लक हुनेछ ।</p>
       <button type="button" class="btn" id="idleContinue">काम जारी राख्नुहोस्</button>
     </div>
   </div>
   <div id="idleLocked" class="modal-overlay hide" role="presentation">
     <div class="modal-card" role="alertdialog" aria-modal="true" aria-labelledby="idleLockedTitle">
       <div class="modal-symbol error">!</div>
-      <h2 id="idleLockedTitle">सिस्टम सुरक्षित रूपमा लक भयो</h2>
-      <p>१५ मिनेटसम्म प्रयोग नभएकाले तपाईंको सत्र समाप्त भएको छ। फेरि लगइन गरेर मात्र कारोबार गर्न सकिन्छ।</p>
+      <h2 id="idleLockedTitle">सिस्टम सुरक्षित रूपमा लक भएको छ</h2>
+      <p>सिस्टममा पुनः काम जारी राख्न कृपया फेरि लगइन गर्नुहोस् ।</p>
       <button type="button" class="btn" id="idleLoginAgain">फेरि लगइन गर्नुहोस्</button>
     </div>
   </div>
@@ -369,7 +369,8 @@
       ['voucherEntry', '✚ Journal Voucher'],
       ['trialBalance', '⚖ Trial Balance / Result'],
       ['userAccess', '♙ User Access'],
-      ['auditReport', '◷ अडिट रिपोर्ट']
+      ['auditReport', '◷ अडिट रिपोर्ट'],
+      ['employees', '♙ कर्मचारी व्यवस्थापन']
     ];
     const state = { token: '', role: '', permissions: [], ready: false, current: 'dashboard', masters: null, pending: new Map(), seq: 0 };
     const $ = id => document.getElementById(id);
@@ -742,6 +743,7 @@
       $('notice').classList.add('hide');
       if (page === 'userAccess') return withBusy(() => userAccess(), 'Loading user permissions…').catch(err => notify(err.message, true));
       if (page === 'auditReport') return auditReport();
+      if (page === 'employees') return employeeWorkspace();
       if (page === 'dashboard') return dashboard();
       if (page === 'customerAccounts') return customerAccounts();
       if (page === 'chartAccounts') return chartAccounts();
@@ -1098,6 +1100,76 @@
         } catch(error) { notify(error.message,true); }
       };
       $('customerStatementPrint').onclick = printCurrentReport;
+    }
+
+    // Dedicated employee directory. Employee ID is never a login username.
+    async function employeeWorkspace() {
+      $('view').innerHTML = `<section class="panel">
+        <div class="master-head"><div><h2>कर्मचारी व्यवस्थापन</h2>
+          <p class="hint">कर्मचारी दर्ता, खोजी तथा आधारभूत तलब विवरण ।</p></div>
+          <button class="btn" id="employeeAdd" type="button">+ नयाँ कर्मचारी</button></div>
+        <div class="master-tools"><input type="search" id="employeeSearch" placeholder="कर्मचारी नम्बर, नाम वा मोबाइलबाट खोज्नुहोस्"></div>
+        <div id="employeeRows" class="table-wrap"></div>
+      </section>`;
+      let employees = [];
+      const draw = () => {
+        const q = $('employeeSearch').value.toLowerCase().trim();
+        const matches = employees.filter(r => [r.EmployeeID,r.FullName,r.Mobile,r.Designation]
+          .some(v => String(v || '').toLowerCase().includes(q)));
+        $('employeeRows').innerHTML = `<table><thead><tr><th>कर्मचारी नम्बर</th><th>नाम</th>
+          <th>पद</th><th>मोबाइल</th><th>तलबको प्रकार</th><th>आधारभूत तलब</th></tr></thead>
+          <tbody>${matches.map(r=>`<tr><td>${escapeHtml(r.EmployeeID)}</td>
+          <td>${escapeHtml(r.FullName)}</td><td>${escapeHtml(r.Designation)}</td>
+          <td>${escapeHtml(r.Mobile || '—')}</td><td>${escapeHtml(r.SalaryType)}</td>
+          <td>${fmt(r.BaseSalary)}</td></tr>`).join('') ||
+          '<tr><td colspan="6">कर्मचारीको विवरण भेटिएन ।</td></tr>'}</tbody></table>`;
+      };
+      const reload = async () => {
+        employees = await withBusy(() => request('employeeList'), 'कर्मचारी विवरण लोड हुँदैछ...');
+        draw();
+      };
+      $('employeeSearch').addEventListener('input',draw);
+      $('employeeAdd').onclick = () => {
+        const old = $('employeeEntryOverlay');
+        if (old) old.remove();
+        const overlay = document.createElement('div');
+        overlay.id = 'employeeEntryOverlay';
+        overlay.className = 'modal-overlay';
+        overlay.style.zIndex = '5000';
+        overlay.innerHTML = `<div class="modal-card" style="width:min(620px,96vw);max-height:90vh;overflow:auto;text-align:left">
+          <h2>नयाँ कर्मचारी दर्ता</h2>
+          <p class="hint">कर्मचारी नम्बर सिस्टमले स्वतः बनाउँछ ।</p>
+          <form id="employeeEntryForm" class="form-grid">
+            <label>कर्मचारीको पूरा नाम *<input name="fullName" required maxlength="150"></label>
+            <label>मोबाइल नम्बर<input name="mobile" maxlength="20"></label>
+            <label>पद *<input name="designation" required maxlength="100" placeholder="जस्तै : ड्राइभर"></label>
+            <label>नियुक्ति मिति *<input name="joinDate" type="date" required></label>
+            <label>तलबको प्रकार<select name="salaryType"><option value="Monthly">मासिक</option>
+              <option value="Daily">दैनिक</option></select></label>
+            <label>आधारभूत तलब (रु.)<input name="baseSalary" type="number" min="0" step="0.01" value="0"></label>
+            <label>ठेगाना<input name="address" maxlength="250"></label>
+            <div style="display:flex;gap:10px;justify-content:flex-end;grid-column:1/-1">
+              <button type="button" class="btn secondary" id="employeeCancel">रद्द गर्नुहोस्</button>
+              <button type="submit" class="btn">कर्मचारी दर्ता गर्नुहोस्</button></div>
+          </form></div>`;
+        document.body.appendChild(overlay);
+        const form = overlay.querySelector('#employeeEntryForm');
+        overlay.querySelector('#employeeCancel').onclick = () => overlay.remove();
+        form.onsubmit = async event => {
+          event.preventDefault();
+          const data = Object.fromEntries(new FormData(form).entries());
+          const submit = form.querySelector('[type=submit]');
+          submit.disabled = true;
+          try {
+            const result = await request('employeeCreate',data);
+            overlay.remove();
+            notify('कर्मचारी दर्ता सफल भयो । कर्मचारी नम्बर : ' + result.EmployeeID);
+            await reload();
+          } catch(err) {notify(err.message,true);}
+          finally {submit.disabled = false;}
+        };
+      };
+      try { await reload(); } catch(err) {notify(err.message,true);}
     }
 
     async function chartAccounts() {
